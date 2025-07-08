@@ -165,5 +165,7 @@ cython_debug/
 data/
 notebook.ipynb
 backup.ipynb
+production_plan_df.pkl
+01_P100_AI_3.xlsx
 excel_files/
 
