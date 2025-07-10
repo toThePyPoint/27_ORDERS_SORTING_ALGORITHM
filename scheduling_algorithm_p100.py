@@ -26,6 +26,7 @@ class ProductionOrderSchedulerP100:
         """
         self.current_record_num = 1
 
+        self.num_of_shifts = None  # One or two shifts?
         self.total_sum_of_windows = 0
         self.middle_point = 0  # Middle point of the production plan - 'kreska', frozen part of the plan
 
@@ -43,8 +44,8 @@ class ProductionOrderSchedulerP100:
         self.sum_of_r3_triple = 0  # Sum of R39 windows
         self.sum_of_r3_double = 0  # Sum of R39 double glazed windows
 
-        self.unique_widths = set()  # Set to store unique widths of windows
-        self.temp_unique_widths = set()  # Temporary set to store unique widths in third part planning
+        self.unique_widths = list()  # Set to store unique widths of windows
+        self.temp_unique_widths = list()  # Temporary set to store unique widths in third part planning
         self.last_width_index = 0  # Index of the last width in the unique widths list
 
         self.unique_sizes = set()  # Set to store unique sizes of windows
@@ -121,6 +122,7 @@ class ProductionOrderSchedulerP100:
         self.calculate_milled()
         self.calculate_golden_oak_and_pine()
         self.calculate_total_sum_of_windows()
+        self.calculate_num_of_shifts()  # define num of shifts
         self.count_small_orders()
         self.count_first_and_last_positions_orders()
         self.calculate_quantity_of_windows_in_first_part()
@@ -429,14 +431,20 @@ class ProductionOrderSchedulerP100:
         Get unique sizes of windows in the production plan
         """
         self.unique_sizes = list(set(self.production_plan_df['size'].unique()))
-        self.unique_sizes = sorted(self.unique_sizes, key=lambda s: int(s.split(' x ')[0]) * int(s.split(' x ')[1]))
+        self.unique_sizes = sorted(self.unique_sizes, key=lambda s: float(s.split(' x ')[0]) * float(s.split(' x ')[1]))
+
+    def calculate_num_of_shifts(self):
+        if self.total_sum_of_windows >= self.TWO_SHIFTS_TRESHOLD:
+            self.num_of_shifts = 2
+        else:
+            self.num_of_shifts = 1
 
     def calculate_middle_point(self):
         """
         Calculate the middle point of the production plan based on the quantity of windows
         Middle point is so called "kreska" which is used to determine the point till which the plan if 'frozen'
         """
-        if self.total_sum_of_windows >= self.TWO_SHIFTS_TRESHOLD:
+        if self.num_of_shifts == 2:
             # two shifts production
             self.middle_point = int(self.MIDDLE_POINT_PROPORTION * (self.total_sum_of_windows // 2))
         else:
@@ -629,14 +637,28 @@ class ProductionOrderSchedulerP100:
 
         if planning_mode == 'first_part':
             # If the sum of scheduled orders reaches the quantity of windows in the first part minus R39, force R39 type
-            trigger = self.sum_of_scheduled_orders >= self.quantity_of_windows_in_first_part - self.sum_of_r3_triple
+            r3_trigger = self.sum_of_scheduled_orders >= self.quantity_of_windows_in_first_part - self.sum_of_r3_triple
         elif planning_mode == 'second_part':
-            trigger = self.last_order_type == 'R3' and self.sum_of_r3_double > 0
+            r3_trigger = self.last_order_type == 'R3' and self.sum_of_r3_double > 0
+        # elif planning_mode == 'first_part_one_shift':
+        #     # do nothing
+        #     pass
+        elif planning_mode == 'second_part_one_shift':
+            # plan r3 when other doubled glazed windows are planned and there are any r3 double
+            windows_left = self.production_plan_df[
+                (~self.production_plan_df['is_scheduled']) &
+                (self.production_plan_df['window_type'] != 'R3') &
+                (~self.production_plan_df['is_triple'])
+                ]['quantity'].sum()
+            r3_trigger = self.sum_of_r3_double > 0 and windows_left == 0
+        elif planning_mode == 'third_part_one_shift':
+            # plan r3 if last order type was R3 and there are any r3 triple in production plan
+            r3_trigger = self.last_order_type == 'R3' and self.sum_of_r3_triple > 0
         else:
-            trigger = None
+            r3_trigger = None
 
         # if self.sum_of_scheduled_orders >= self.quantity_of_windows_in_first_part - self.sum_of_r3_triple:
-        if trigger:
+        if r3_trigger:
             print(f"R3 left:", r3_left)
             if r3_left > 0:
                 self.possible_types = ['R3']
@@ -794,14 +816,21 @@ class ProductionOrderSchedulerP100:
         # self.quantity_scheduled_in_previous_iteration = 0
 
         # self.possible_colors = ['W', self.color_before_middle_point]
-        if self.last_order_type == 'R3' and self.sum_of_r3_double > 0:
-            # If the last scheduled order was R39 and there are still R39 double glazed windows left, force R3 type
-            self.possible_types = ['R3']
-            self.force_type = True
-            self.force_milled = False  # Reset the force milled flag for the second part
-        else:
+        if planning_mode == 'second_part':
+            if self.last_order_type == 'R3' and self.sum_of_r3_double > 0:
+                # If the last scheduled order was R39 and there are still R39 double glazed windows left, force R3 type
+                self.possible_types = ['R3']
+                self.force_type = True
+                self.force_milled = False  # Reset the force milled flag for the second part
+            else:
+                self.force_type = False
+                self.possible_types = self.windows_types
+
+        if planning_mode == 'second_part_one_shift':
             self.force_type = False
             self.possible_types = self.windows_types
+            self.possible_types.remove('R3')
+
         print("Starting second part of the production plan with possible types:", self.possible_types)
         steps = len(self.unique_widths) * 150
         iterator = self.ping_pong_iter(self.unique_widths, start_index=self.last_width_index, steps=steps)
@@ -905,7 +934,7 @@ class ProductionOrderSchedulerP100:
         is_planning_finished = False
         counter = 0
 
-        if planning_mode == 'third_part':
+        if planning_mode == 'third_part' or planning_mode == 'third_part_one_shift':
             self.force_milled = False
             last_double_width = self.unique_widths[self.last_width_index]
             self.temp_unique_widths = self.unique_widths.copy()
@@ -915,7 +944,15 @@ class ProductionOrderSchedulerP100:
                     last_double_width)  # Update the last width index to the last double glazed window
 
         if planning_mode == 'third_part_740':
+            print(f"Planning mode: {planning_mode}")
             self.unique_widths = self.temp_unique_widths.copy()  # Use the temporary unique widths for the third part
+
+        if planning_mode == 'third_part_one_shift':
+            if self.last_order_type == 'R3' and self.sum_of_r3_triple > 0:
+                # If the last scheduled order was R39 and there are still R39 triple glazed windows left, force R3 type
+                self.possible_types = ['R3']
+                self.force_type = True
+                self.force_milled = False  # Reset the force milled flag for the third part
 
         print("Starting third part of the production plan with width index:", self.last_width_index)
         # Schedule triple glazed windows - third part of the production plan
@@ -1003,12 +1040,27 @@ class ProductionOrderSchedulerP100:
         print(f"Number of orders to plan: {num_of_orders_to_plan_as_first_positions}")
         self.start_or_finish_the_production_plan(planning_mode='first_part',
                                                  num_of_orders_to_plan=num_of_orders_to_plan_as_first_positions)
-        self.schedule_first_part_of_production_plan(planning_mode='first_part')
-        self.schedule_second_part_of_production_plan(planning_mode='second_part')
-        self.schedule_third_part_of_production_plan(planning_mode='third_part')
+
+        if self.num_of_shifts == 2:
+            self.schedule_first_part_of_production_plan(planning_mode='first_part')
+        else:
+            self.schedule_first_part_of_production_plan(planning_mode='first_part_one_shift')
+
+        if self.num_of_shifts == 2:
+            self.schedule_second_part_of_production_plan(planning_mode='second_part')
+        else:
+            self.schedule_second_part_of_production_plan(planning_mode='second_part_one_shift')
+
+        if self.num_of_shifts == 2:
+            self.schedule_third_part_of_production_plan(planning_mode='third_part')
+        else:
+            self.schedule_third_part_of_production_plan(planning_mode='third_part_one_shift')
+
         self.schedule_third_part_of_production_plan(planning_mode='third_part_740')
         self.start_or_finish_the_production_plan(planning_mode='third_part',
                                                  num_of_orders_to_plan=self.total_num_of_first_and_last_positions_orders - num_of_orders_to_plan_as_first_positions)
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
+
+
 
