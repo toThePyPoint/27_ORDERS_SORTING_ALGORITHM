@@ -4,8 +4,7 @@ import pyperclip
 import io
 
 
-# backup created 2025-07-04 14:36
-class ProductionOrderScheduler:
+class ProductionOrderSchedulerP100:
     SMALL_ORDER_TRRESHOLD = 4  # Threshold for small orders in quantity
     SMALL_ORDERS_MAX_SEQUENCE = 3  # Maximum sequence of small orders in the production plan
     TRIPLE_GLAZED_PANES = ['9', '9C']
@@ -516,9 +515,6 @@ class ProductionOrderScheduler:
             self.ignore_height_matching_condition = True  # Ignore height matching condition after 4 empty loops
             self.skip_widths_until_last_width = True  # Skip widths until the last width in the unique widths list
 
-        # if self.number_of_empty_loops >= 4:
-        #     self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
-
         if self.number_of_empty_loops == 4:
             self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
             self.ignore_height_matching_condition = False
@@ -526,8 +522,6 @@ class ProductionOrderScheduler:
         if self.number_of_empty_loops >= 6:
             self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
             self.ignore_height_matching_condition = True
-
-        # --------------------------------------------------
 
         if self.number_of_empty_loops >= 8:
             self.ignore_small_sequence_condition = True
@@ -844,6 +838,9 @@ class ProductionOrderScheduler:
             repeat_iteration_over_df = False  # Reset the flag for each iteration
 
             for row in self.production_plan_df.itertuples():
+
+                if row.width != width:
+                    continue
 
                 # Check if all double glazed windows are scheduled
                 double_glazed_left = self.production_plan_df[
