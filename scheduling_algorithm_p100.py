@@ -936,6 +936,7 @@ class ProductionOrderSchedulerP100:
         self.quantity_scheduled_in_previous_iteration = 0
 
         is_planning_finished = False
+        skip_width_740 = False
         counter = 0
 
         if planning_mode == self.planning_modes.third_part_two_shifts or planning_mode == self.planning_modes.third_part_one_shift:
@@ -946,6 +947,13 @@ class ProductionOrderSchedulerP100:
                 self.unique_widths.remove(np.int64(740))  # Remove 740 width if last double glazed window wasn't 740
                 self.last_width_index = self.unique_widths.index(
                     last_double_width)  # Update the last width index to the last double glazed window
+
+            left_r39_not_740 = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                                       (self.production_plan_df['window_type'] == 'R3') &
+                                                       (self.production_plan_df['width'] != np.int64(740))
+                                                       ]['quantity'].sum()
+            if last_double_width == np.int64(740) and self.last_order_type == 'R3' and left_r39_not_740 > 0:
+                skip_width_740 = True
 
         if planning_mode == self.planning_modes.third_part_740:
             self.unique_widths = self.temp_unique_widths.copy()  # Use the temporary unique widths for the third part
@@ -972,6 +980,13 @@ class ProductionOrderSchedulerP100:
                 counter += 1
 
             for row in self.production_plan_df.itertuples():
+                if skip_width_740 and row.width == 740:
+                    left_r39_not_740 = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                        (self.production_plan_df['window_type'] == 'R3') &
+                                        (self.production_plan_df['width'] != np.int64(740))
+                                        ]['quantity'].sum()
+                    if left_r39_not_740 == 0:
+                        continue
                 if row.is_scheduled:
                     continue
                 if row.prd_ord_num in self.production_order_numbers_for_first_and_last_positions:
