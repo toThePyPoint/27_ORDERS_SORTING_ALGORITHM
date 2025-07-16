@@ -15,7 +15,7 @@ class PlanningModesP100:
 
 
 class ProductionOrderSchedulerP100:
-    SMALL_ORDER_THRESHOLD = 4  # Threshold for small orders in quantity
+    SMALL_ORDER_THRESHOLD = 3  # Threshold for small orders in quantity
     SMALL_ORDERS_MAX_SEQUENCE = 3  # Maximum sequence of small orders in the production plan
     TRIPLE_GLAZED_PANES = ['9', '9C']
     URGENT_ORDERS_RECEIVERS_2_pm = ['2101/Polska/C', '3301/Węgry/C']
@@ -763,7 +763,7 @@ class ProductionOrderSchedulerP100:
 
         # Schedule triple glazed windows - first part of the production plan
         for width in self.ping_pong_iter(self.unique_widths, start_index=self.last_width_index,
-                                         steps=len(self.unique_widths) * 20):
+                                         steps=len(self.unique_widths) * 100):
             if self.skip_widths_until_last_width:
                 # If we dropped height condition, we want to come back to last scheduled width so that the width constistency is kept if possible
                 if width != self.last_order_width:
@@ -943,15 +943,24 @@ class ProductionOrderSchedulerP100:
             self.force_milled = False
             last_double_width = self.unique_widths[self.last_width_index]
             self.temp_unique_widths = self.unique_widths.copy()
-            if last_double_width != np.int64(740):
+
+            left_r39_740 = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                                   (self.production_plan_df['window_type'] == 'R3') &
+                                                   (self.production_plan_df['width'] == np.int64(740)) &
+                                                   (self.production_plan_df['is_triple'])
+                                                   ]['quantity'].sum()
+
+            if last_double_width != np.int64(740) and not (left_r39_740 > 0 and self.last_order_type == "R3"):
                 self.unique_widths.remove(np.int64(740))  # Remove 740 width if last double glazed window wasn't 740
                 self.last_width_index = self.unique_widths.index(
                     last_double_width)  # Update the last width index to the last double glazed window
 
             left_r39_not_740 = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
                                                        (self.production_plan_df['window_type'] == 'R3') &
-                                                       (self.production_plan_df['width'] != np.int64(740))
+                                                       (self.production_plan_df['width'] != np.int64(740)) &
+                                                       (self.production_plan_df['is_triple'])
                                                        ]['quantity'].sum()
+
             if last_double_width == np.int64(740) and self.last_order_type == 'R3' and left_r39_not_740 > 0:
                 skip_width_740 = True
 
@@ -968,7 +977,7 @@ class ProductionOrderSchedulerP100:
         print("Starting third part of the production plan with width index:", self.last_width_index)
         # Schedule triple glazed windows - third part of the production plan
         for width in self.ping_pong_iter(self.unique_widths, start_index=self.last_width_index,
-                                         steps=len(self.unique_widths) * 30):
+                                         steps=len(self.unique_widths) * 50):
             if self.skip_widths_until_last_width:
                 # If we dropped height condition, we want to come back to last scheduled width so that the width constistency is kept if possible
                 if width != self.last_order_width:
@@ -982,9 +991,9 @@ class ProductionOrderSchedulerP100:
             for row in self.production_plan_df.itertuples():
                 if skip_width_740 and row.width == 740:
                     left_r39_not_740 = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
-                                        (self.production_plan_df['window_type'] == 'R3') &
-                                        (self.production_plan_df['width'] != np.int64(740))
-                                        ]['quantity'].sum()
+                                                               (self.production_plan_df['window_type'] == 'R3') &
+                                                               (self.production_plan_df['width'] != np.int64(740))
+                                                               ]['quantity'].sum()
                     if left_r39_not_740 == 0:
                         continue
                 if row.is_scheduled:
