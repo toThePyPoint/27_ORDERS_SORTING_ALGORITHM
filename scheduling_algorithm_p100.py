@@ -654,11 +654,19 @@ class ProductionOrderSchedulerP100:
             r3_trigger = self.last_order_type == 'R3' and self.sum_of_r3_double > 0
         elif planning_mode == self.planning_modes.second_part_one_shift:
             # plan r3 when other doubled glazed windows are planned and there are any r3 double
-            windows_left = self.production_plan_df[
-                (~self.production_plan_df['is_scheduled']) &
-                (self.production_plan_df['window_type'] != 'R3') &
-                (~self.production_plan_df['is_triple'])
-                ]['quantity'].sum()
+            if self.can_be_material_unavailable:
+                windows_left = self.production_plan_df[
+                    (~self.production_plan_df['is_scheduled']) &
+                    (self.production_plan_df['window_type'] != 'R3') &
+                    (~self.production_plan_df['is_triple'])
+                    ]['quantity'].sum()
+            else:
+                windows_left = self.production_plan_df[
+                    (~self.production_plan_df['is_scheduled']) &
+                    (self.production_plan_df['window_type'] != 'R3') &
+                    (~self.production_plan_df['is_triple']) &
+                    (self.production_plan_df['is_material_available'])
+                    ]['quantity'].sum()
             r3_trigger = self.sum_of_r3_double > 0 and windows_left == 0
         elif planning_mode == self.planning_modes.third_part_one_shift:
             # plan r3 if last order type was R3 and there are any r3 triple in production plan
