@@ -20,6 +20,9 @@ class ProductionOrderSchedulerP100:
     TRIPLE_GLAZED_PANES = ['9', '9C']
     URGENT_ORDERS_RECEIVERS_2_pm = ['2101/Polska/C', '3301/Węgry/C']
     SAP_NUMBERS_FOR_FIRST_AND_LAST_POSITIONS = ['808965', '808966', '839134', '839135']
+    WIDTHS_FOR_FIRST_AND_LAST_POSITIONS = [740]
+    HEIGHTS_FOR_FIRST_AND_LAST_POSITIONS = [1180, 1400]
+    GLASS_TYPES_FOR_FIRST_AND_LAST_POSITIONS = ['9C', '9']
     TWO_SHIFTS_THRESHOLD = 180  # Threshold for two shifts in quantity
     MIDDLE_POINT_PROPORTION = 0.55  # Proportion of the sum of windows per shift to determine the middle point
     ADDITIONAL_MILLING_WIDTHS = [1340]  # Widths that require additional milling operations
@@ -387,6 +390,14 @@ class ProductionOrderSchedulerP100:
             (self.production_plan_df['quantity'] >= 12)
             ]['prd_ord_num'].tolist()
 
+        if len(self.production_order_numbers_for_first_and_last_positions) < 2:
+            self.production_order_numbers_for_first_and_last_positions = self.production_plan_df[
+                (self.production_plan_df['quantity'] >= 12) &
+                (self.production_plan_df['width'].isin(self.WIDTHS_FOR_FIRST_AND_LAST_POSITIONS)) &
+                (self.production_plan_df['height'].isin(self.HEIGHTS_FOR_FIRST_AND_LAST_POSITIONS)) &
+                (self.production_plan_df['glass_type'].isin(self.GLASS_TYPES_FOR_FIRST_AND_LAST_POSITIONS))
+                ]['prd_ord_num'].tolist()
+
     def count_first_and_last_positions_orders(self):
         """
         Count the number of orders that can be either first or last positions in the production plan
@@ -414,8 +425,9 @@ class ProductionOrderSchedulerP100:
         """
         Check if the material is available for given production order
         """
+        # TODO: Usunąć ZTCH
         self.production_plan_df['is_material_available'] = self.production_plan_df['system_status'].str.startswith(
-            'ZWOL')
+            ('ZWOL', 'ZTCH'))
 
     def is_milled_window(self):
         """
