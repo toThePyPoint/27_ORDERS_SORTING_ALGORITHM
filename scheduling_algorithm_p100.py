@@ -30,6 +30,7 @@ class ProductionOrderSchedulerP100:
     MILLED_WINDOWS_MAX_SEQUENCE = 14  # Maximum sequence of milled windows in the production plan [pcs]
     MILLED_WINDOWS_MIN_SEQUENCE_SEPARATION = 6  # Separation between milled windows in the production plan [pcs]
     MILLED_WINDOWS_TOLERANCE = 2  # Tolerance for milled windows sequence in the production plan [pcs]
+    MILLED_WINDOWS_COEFFICIENT = 1.0 # It increases max sequence of milled windows during the calculations
     MINIMUM_GAP_BETWEEN_COLORS = 6  # Allowed gap between colors in the production plan [pcs]
     NOT_SCHEDULED_NUMBER = 9999  # number used in Scheduling position column, it shows posistions which were not scheduled
 
@@ -425,9 +426,9 @@ class ProductionOrderSchedulerP100:
         """
         Check if the material is available for given production order
         """
-        # TODO: Usunąć ZTCH
+        # TODO: Usunąć/dodać ZTCH do testów
         self.production_plan_df['is_material_available'] = self.production_plan_df['system_status'].str.startswith(
-            ('ZWOL', 'ZTCH'))
+            ('ZWOL'))
 
     def is_milled_window(self):
         """
@@ -508,8 +509,9 @@ class ProductionOrderSchedulerP100:
         """
         sum_of_not_milled_for_separation = self.total_sum_of_windows - self.sum_of_triple_glazed - self.sum_of_milled_orders - self.sum_of_r3_double
         num_of_groups = (sum_of_not_milled_for_separation / self.MILLED_WINDOWS_MIN_SEQUENCE_SEPARATION) + 1
-        self.milled_windows_max_sequence = int(self.sum_of_milled_orders / num_of_groups)
+        self.milled_windows_max_sequence = int((self.sum_of_milled_orders / num_of_groups) * self.MILLED_WINDOWS_COEFFICIENT)
         self.milled_windows_max_sequence = max(self.milled_windows_max_sequence, self.MILLED_WINDOWS_MAX_SEQUENCE)
+        print(f"Sum of milled: {self.sum_of_milled_orders}")
         print(f"Sum of not milled: {sum_of_not_milled_for_separation}")
         print(f"num of groups {num_of_groups}")
         print(f"milled windows max seqence {self.milled_windows_max_sequence}")
