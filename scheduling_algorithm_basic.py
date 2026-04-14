@@ -14,7 +14,7 @@ class ProductionOrderSchedulerBasic:
     INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
     INITIAL_SORTING_ORDER = [True, True, True]
     TRIPLE_GLAZED_PANES = []
-    WINDOWS_TYPES = ['R6', 'R8']
+    ALL_TYPES = ['R6', 'R8']
 
     def __init__(self):
         """
@@ -43,7 +43,7 @@ class ProductionOrderSchedulerBasic:
 
         self.production_order_numbers_for_first_and_last_positions = []  # List to store production order numbers for first and last positions
 
-        self.windows_types = self.WINDOWS_TYPES
+        self.windows_types = self.ALL_TYPES
         # self.milled_types = ['R4', 'R7']
         # self.colors_list = ['K', 'G', 'W']
         self.color_before_middle_point = None  # Color of the windows with triple panes before the middle point
@@ -392,12 +392,16 @@ class ProductionOrderSchedulerBasic:
             self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
             self.ignore_height_matching_condition = True
 
+        if self.number_of_empty_loops >= 8:
+            self.ignore_small_sequence_condition = True
+
         self.quantity_scheduled_in_previous_iteration = self.sum_of_scheduled_orders
 
     def reset_empty_loops_counter(self):
         """
         Reset the counter for empty loops in the scheduling process and reset the ignore_small_sequence_condition flag
         """
+        self.ignore_small_sequence_condition = False  # Reset the flag for ignoring small orders sequence condition
         self.ignore_width_matching_condition = False
         self.ignore_height_matching_condition = False  # Reset the flag for ignoring height matching condition
         self.skip_widths_until_last_width = False  # Reset the flag for skipping widths until the last width in the unique widths list
@@ -594,9 +598,11 @@ class ProductionOrderSchedulerBasic:
 
 
 class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    WINDOWS_TYPES = ['R6', 'R8', '627', '847']
+    ALL_TYPES = ['R6', 'R8', '627', '847']
     OLD_GEN_TYPES = ['627', '847']
-    POSSIBLE_PRODUCTS = ['WDF', 'WDT', 'EFL']
+    NEW_GEN_TYPES = ['R6', 'R8']
+    ALL_PRODUCTS = ['WDF', 'WDT', 'EFL']
+    SMALL_ORDERS_MAX_SEQUENCE = 3
 
     def __init__(self):
         super().__init__()
@@ -623,6 +629,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
             ('EFL', 'product', 'EFL'),
             ('627', 'window_type', '627'),
             ('847', 'window_type', '847'),
+            ('ARTIKEL', 'width', 740)
         ]
 
         for search_text, target_col, fill_value in mappings:
@@ -730,13 +737,26 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         efl_r6_r8_left = efl_left - efl_old_gen_left
 
         if self.sum_of_scheduled_orders >= self.middle_point or self.sum_of_scheduled_orders >= self.possible_windows_before_middle_point:
-            self.possible_products = self.POSSIBLE_PRODUCTS
+            self.possible_products = self.ALL_PRODUCTS
 
         if self.last_order_product == 'EFL' and efl_left:
             self.possible_products = ['EFL']
-            if self.last_order_type in self.OLD_GEN_TYPES and efl_old_gen_left:
-                self.possible_types = self.OLD_GEN_TYPES
 
+            if self.last_order_type in self.OLD_GEN_TYPES:
+                if efl_old_gen_left:
+                    self.possible_types = self.OLD_GEN_TYPES
+                else:
+                    self.possible_types = self.NEW_GEN_TYPES
+
+            elif self.last_order_type in self.NEW_GEN_TYPES:
+                if efl_r6_r8_left:
+                    self.possible_types = self.NEW_GEN_TYPES
+                else:
+                    self.possible_types = self.OLD_GEN_TYPES
+
+        if not efl_left:
+            self.possible_products = self.ALL_PRODUCTS
+            self.possible_types = self.ALL_TYPES
 
     def schedule_production_plan(self):
         """
@@ -777,6 +797,9 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                     if width is None:
                         # If there are no more widths to schedule, break the loop
                         print("No more widths to schedule, breaking the loop.")
+                        print("Possible types: ", self.possible_types)
+                        print("Possible products: ", self.possible_products)
+                        print("Unique widths: ", self.unique_widths)
                         break
             else:
                 is_first_iteration = False
@@ -815,7 +838,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                     continue
                 if not row.product in self.possible_products:
                     continue
-                if not row.window_type in self.possible_products:
+                if not row.window_type in self.possible_types:
                     continue
                 if row.width == width:
                     self.schedule_one_position_basic(row)
