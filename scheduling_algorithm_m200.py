@@ -5,28 +5,26 @@ import re
 from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
-class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R6', 'R8', '627', '847']
-    OLD_GEN_TYPES = ['627', '847']
-    NEW_GEN_TYPES = ['R6', 'R8']
-    ALL_PRODUCTS = ['WDF', 'WDT', 'EFL']
-    INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
-    INITIAL_SORTING_ORDER = [True, True, True]
-    SMALL_ORDERS_MAX_SEQUENCE = 3
+class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
+    ALL_TYPES = ['R3', 'R4', 'R5', 'R7', '435', '439']
+    OLD_GEN_TYPES = ['435', '439', '735']
+    NEW_GEN_TYPES = ['R3', 'R4', 'R5', 'R7']
+    ALL_PRODUCTS = ['WDF', 'WDT', 'WDA', 'WRA', 'EFL']
+    INITIAL_SORTING_COLUMNS = ['is_small', 'glass_type', 'width', 'height']
+    INITIAL_SORTING_ORDER = [False, True, True, True]
     MIDDLE_POINT_PROPORTION = 0.6
-    TWO_SHIFTS_THRESHOLD = 180
+    TWO_SHIFTS_THRESHOLD = 240
 
     def __init__(self):
         super().__init__()
-        self.sum_of_efls_627 = 0
-        self.sum_of_efls_847 = 0
-        self.possible_windows_before_middle_point = 0
-        self.possible_sashes_before_middle_point = 0
-        self.last_production_order_quantity = 0  # quantity of last production order
-
         self.possible_products = None
+        self.type_to_start_with = None # either R4 or R7
 
         self.is_dummy_allowed = False
+        self.starting_plan = True
+        self.finishing_plan = False
+        self.starting_orders_scheduled = 0
+        self.finishing_orders_scheduled = 0
 
         self.width_map = {
             '05': 540,
@@ -52,18 +50,21 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         # Repeat these functions in child class
         self.sort_production_plan()
         self.get_unique_widths()
-        self.calculate_labor_coefficients()
         self.calculate_middle_point()
-        self.calculate_efls()
-        self.calculate_products_before_middle_point()
-        self.select_last_order()
+        self.add_is_kf_column()
+        self.determine_type_to_start_with()
+        self.gather_production_order_numbers_for_first_and_last_positions()
+        self.num_of_first_positions = len(self.production_order_numbers_for_first_positions)
+        self.num_of_last_positions = len(self.production_order_numbers_for_last_positions)
+
 
     def fill_dummy_data(self):
         # Definiujemy mapowanie: co szukamy -> do której kolumny -> jaka wartość
         mappings = [
             ('EFL', 'product', 'EFL'),
-            ('627', 'window_type', '627'),
-            ('847', 'window_type', '847'),
+            ('435', 'window_type', '435'),
+            ('439', 'window_type', '439'),
+            ('735', 'window_type', '735'),
         ]
 
         self.production_plan_df['is_dummy'] = False
@@ -147,81 +148,6 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                 extract_and_map, axis=1, result_type='expand'
             )
 
-    def calculate_labor_coefficients(self):
-        def get_labor_factor(row):
-            # 1. Sprawdzamy rolety (najwyższy wskaźnik/priorytet)
-            if row['roller_blind'] in ['ZAR', 'ZRV']:
-                return 1.5
-
-            # 2. Sprawdzamy typ produktu
-            val = row['product']
-            if val == 'WDT':
-                return 1.5
-            if val == 'EFL':
-                return 0.5
-
-            # 3. Wartość domyślna (jeśli żaden warunek nie jest spełniony)
-            return 1.0
-
-        # Obliczamy nową kolumnę (opcjonalnie) i aktualizujemy quantity lub tworzymy labor_time
-        if not self.production_plan_df.empty:
-            factors = self.production_plan_df.apply(get_labor_factor, axis=1)
-            self.production_plan_df['quantity'] = self.production_plan_df['quantity'] * factors
-
-    def calculate_efls(self):
-        self.sum_of_efls = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(('R6', 'R8')))][
-            'quantity'].sum()
-        self.sum_of_efls_847 = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                       (self.production_plan_df['window_type'].isin(('847',)))][
-            'quantity'].sum()
-        self.sum_of_efls_627 = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                       (self.production_plan_df['window_type'].isin(('627',)))][
-            'quantity'].sum()
-        print(f"EFL sum: {self.sum_of_efls}")
-        print(f"EFL 847 sum: {self.sum_of_efls_847}")
-        print(f"EFL 627 sum: {self.sum_of_efls_627}")
-
-    def calculate_products_before_middle_point(self):
-        self.possible_windows_before_middle_point = \
-        self.production_plan_df[(self.production_plan_df['is_material_available']) &
-                                (self.production_plan_df['product'].isin(('WDT', 'WDF')))]['quantity'].sum()
-        self.possible_sashes_before_middle_point = \
-        self.production_plan_df[(self.production_plan_df['is_material_available']) &
-                                (self.production_plan_df['product'] == "EFL")]['quantity'].sum()
-        print(f'Possible windows before middle point: {self.possible_windows_before_middle_point}')
-        print(f"Possible sashes before middle point: {self.possible_sashes_before_middle_point}")
-
-    def handle_efls(self):
-        efl_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                           (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
-        efl_old_gen_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(self.OLD_GEN_TYPES)) &
-                                                   (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
-        efl_r6_r8_left = efl_left - efl_old_gen_left
-
-        if self.sum_of_scheduled_orders >= self.middle_point or self.sum_of_scheduled_orders >= self.possible_windows_before_middle_point - self.last_production_order_quantity:
-            self.possible_products = self.ALL_PRODUCTS
-
-        if self.last_order_product == 'EFL' and efl_left:
-            self.possible_products = ['EFL']
-
-            if self.last_order_type in self.OLD_GEN_TYPES:
-                if efl_old_gen_left:
-                    self.possible_types = self.OLD_GEN_TYPES
-                else:
-                    self.possible_types = self.NEW_GEN_TYPES
-
-            elif self.last_order_type in self.NEW_GEN_TYPES:
-                if efl_r6_r8_left:
-                    self.possible_types = self.NEW_GEN_TYPES
-                else:
-                    self.possible_types = self.OLD_GEN_TYPES
-
-        if not efl_left:
-            self.possible_products = self.ALL_PRODUCTS
-            self.possible_types = self.ALL_TYPES
-
     def handle_dummy_orders(self):
         """
         Can be scheduled only after middle point
@@ -229,6 +155,20 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         """
         if self.sum_of_scheduled_orders >= self.middle_point:
             self.is_dummy_allowed = True
+
+    def handle_window_types(self):
+        pass
+
+    def handle_starting_and_finishing_plan(self):
+        if self.last_order_prd_num in self.production_order_numbers_for_first_positions:
+            self.starting_orders_scheduled += 1
+        if self.last_order_prd_num in self.production_order_numbers_for_last_positions:
+            self.finishing_orders_scheduled += 1
+
+        if self.starting_orders_scheduled >= len(self.production_order_numbers_for_first_positions):
+            self.starting_plan = False
+
+        # TODO: Implement finishing the plan
 
     def schedule_production_plan(self):
         """
@@ -254,7 +194,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         # Schedule production plan
         while counter < steps:
             if self.skip_widths_until_last_width:
-                # If we dropped height condition, we want to come back to last scheduled width so that the width constistency is kept if possible
+                # If we dropped height condition, we want to come back to last scheduled width so that the width consistency is kept if possible
                 if width != self.last_order_width:
                     width = next(iterator, None)  # Get the next width from the iterator
                     continue
@@ -289,8 +229,12 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
                 if row.is_scheduled:
                     continue
-                if row.prd_ord_num in self.production_order_numbers_for_last_positions:
-                    continue
+                if not self.finishing_plan:
+                    if row.prd_ord_num in self.production_order_numbers_for_last_positions:
+                        continue
+                if self.starting_plan:
+                    if row.prd_ord_num not in self.production_order_numbers_for_first_positions:
+                        continue
                 if not self.ignore_width_matching_condition:
                     # if we are not ignoring width matching condition, we check if the width matches the last scheduled order
                     if self.last_order_width and row.width != self.last_order_width:
@@ -347,38 +291,49 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
     def schedule_one_position_additional(self, df_row):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
-        self.handle_efls()
         self.handle_dummy_orders()
+        self.handle_starting_and_finishing_plan()
 
-    def select_last_order(self):
-        last_ord_max_quantity = self.possible_windows_before_middle_point + self.possible_sashes_before_middle_point - self.middle_point
-        last_ord_max_quantity = min(last_ord_max_quantity, 6)
-        temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
-                                          (~self.production_plan_df['is_urgent_till_6_pm']) &
-                                          (self.production_plan_df['quantity'] <= last_ord_max_quantity) &
-                                          (self.production_plan_df['customer_order_number'].isna())].sort_values(
-            by='quantity', ascending=False)
+    def gather_production_order_numbers_for_first_and_last_positions(self):
+        """
+        Gather production order numbers for first and last positions in the production plan
+        """
+        self.production_order_numbers_for_first_positions = self.production_plan_df[
+            (self.production_plan_df['quantity'] >= 12) &
+            (self.production_plan_df['is_material_available']) &
+            (self.production_plan_df['window_type'] == self.type_to_start_with)
+        ].sort_values(
+            by=['is_urgent_till_6_pm', 'customer_order_number'],
+            ascending=[False, True],
+            na_position='last'
+        )['prd_ord_num'].head(1).tolist()
 
-        if temp_df.empty:
-            temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
-                                              (~self.production_plan_df['is_urgent_till_6_pm']) &
-                                              (self.production_plan_df[
-                                                   'quantity'] <= last_ord_max_quantity)].sort_values(
-                by='quantity', ascending=False)
-
-        # Sprawdzamy, czy temp_df nie jest pusty, aby uniknąć błędu IndexError
-        if not temp_df.empty:
-            order_num = temp_df['prd_ord_num'].iloc[0]
-            self.production_order_numbers_for_last_positions.append(order_num)
-            self.last_production_order_quantity = temp_df['quantity'].iloc[0]
-
-        print(self.production_order_numbers_for_last_positions)
+        self.production_order_numbers_for_last_positions = self.production_plan_df[
+            (self.production_plan_df['quantity'] >= 12) &
+            (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_first_positions))
+            ]['prd_ord_num'].head(1).tolist()
 
     def main_scheduling_function(self):
         """
         Schedule production orders based on the production plan and defined conditions
         """
         self.schedule_production_plan()
-        self.schedule_production_plan_last_position()
+        # self.schedule_production_plan_last_position()
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
+
+    def determine_type_to_start_with(self):
+        r4_possible_before_middle_point = self.production_plan_df[(self.production_plan_df['window_type'] == 'R4') &
+                                                                   (self.production_plan_df['is_material_available']) &
+                                                                   ((self.production_plan_df['profile_color'] != 'WH') | (self.production_plan_df['is_KF'] == True))
+        ]['quantity'].sum()
+
+        if r4_possible_before_middle_point >= self.middle_point:
+            self.type_to_start_with = 'R4'
+        else:
+            self.type_to_start_with = 'R7'
+        print("Type to start with is", self.type_to_start_with)
+
+    def add_is_kf_column(self):
+        self.production_plan_df['is_KF'] = self.production_plan_df.apply(lambda row: row['product_name'].endswith('KF'), axis=1)
+

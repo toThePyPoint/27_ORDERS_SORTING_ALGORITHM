@@ -397,7 +397,7 @@ class ProductionOrderSchedulerP100:
                 (self.production_plan_df['width'].isin(self.WIDTHS_FOR_FIRST_AND_LAST_POSITIONS)) &
                 (self.production_plan_df['height'].isin(self.HEIGHTS_FOR_FIRST_AND_LAST_POSITIONS)) &
                 (self.production_plan_df['glass_type'].isin(self.GLASS_TYPES_FOR_FIRST_AND_LAST_POSITIONS))
-                ]['prd_ord_num'].tolist()
+                ]['prd_ord_num'].head(2).tolist()
 
     def count_first_and_last_positions_orders(self):
         """

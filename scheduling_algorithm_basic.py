@@ -40,11 +40,10 @@ class ProductionOrderSchedulerBasic:
         self.temp_unique_sizes = list()  # Temporary set to store unique sizes in third part planning
         self.last_size_index = 0  # Index of the last size in the unique sizes list
 
-        self.production_order_numbers_for_first_and_last_positions = []  # List to store production order numbers for first and last positions
+        self.production_order_numbers_for_last_positions = []  # List to store production order numbers for first and last positions
+        self.production_order_numbers_for_first_positions = []
 
         self.windows_types = self.ALL_TYPES
-        # self.milled_types = ['R4', 'R7']
-        # self.colors_list = ['K', 'G', 'W']
         self.color_before_middle_point = None  # Color of the windows with triple panes before the middle point
 
         # quantity of windows in first part of the production plan - triple glazed windows
@@ -516,7 +515,7 @@ class ProductionOrderSchedulerBasic:
 
                 if row.is_scheduled:
                     continue
-                if row.prd_ord_num in self.production_order_numbers_for_first_and_last_positions:
+                if row.prd_ord_num in self.production_order_numbers_for_last_positions:
                     continue
                 if not self.ignore_width_matching_condition:
                     # if we are not ignoring width matching condition, we check if the width matches the last scheduled order
@@ -566,7 +565,7 @@ class ProductionOrderSchedulerBasic:
                     # if we are not ignoring height matching condition, we check if the height matches the last scheduled order
                     if self.last_order_height and row.height != self.last_order_height:
                         continue
-                if row.prd_ord_num in self.production_order_numbers_for_first_and_last_positions:
+                if row.prd_ord_num in self.production_order_numbers_for_last_positions:
                     self.schedule_one_position_basic(row)
                     self.schedule_one_position_additional(row)
                     counter += 1
