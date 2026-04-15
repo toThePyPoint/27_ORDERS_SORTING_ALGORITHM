@@ -22,6 +22,27 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
         self.possible_products = None
 
+        self.is_dummy_allowed = False
+
+        self.width_map = {
+            '05': 540,
+            '06': 650,
+            '07': 740,
+            '09': 940,
+            '11': 1140,
+            '13': 1340
+            # dodaj kolejne...
+        }
+
+        self.height_map = {
+            '07': 780,
+            '09': 980,
+            '11': 1180,
+            '14': 1400,
+            '16': 1600,
+            # dodaj kolejne...
+        }
+
         self.fill_dimensions()
 
         # Repeat these functions in child class
@@ -39,8 +60,9 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
             ('EFL', 'product', 'EFL'),
             ('627', 'window_type', '627'),
             ('847', 'window_type', '847'),
-            ('ARTIKEL', 'width', 740)
         ]
+
+        self.production_plan_df['is_dummy'] = False
 
         for search_text, target_col, fill_value in mappings:
             # Tworzymy maskę dynamicznie dla każdej pary
@@ -51,26 +73,49 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
             self.production_plan_df.loc[mask, target_col] = fill_value
 
+        # --- Nowa część: Ekstrakcja danych z 'long_text' dla 'ARTIKEL' ---
+
+        # 1. Definiujemy maskę dla wierszy zawierających 'ARTIKEL'
+        artikel_mask = self.production_plan_df['product_name'].str.contains('ARTIKEL', na=False)
+
+        # 2. Wyrażenie regularne do wyciągnięcia: R6, 9G, 134, 140
+        # Grupy: (R6)(9G) (134)/(140)
+        regex_pattern = r'([A-Z]\d)(\d[A-Z])\s+(\d+)/(\d+)'
+
+        def extract_and_fill(row):
+            text = str(row['long_text'])
+            match = re.search(regex_pattern, text)
+
+            if match:
+                w_type, g_type, w_val, h_val = match.groups()
+
+                # Uzupełniamy tylko jeśli pole jest puste/NaN
+                if not row.get('window_type') or pd.isna(row['window_type']):
+                    row['window_type'] = w_type
+
+                if not row.get('glass_type') or pd.isna(row['glass_type']):
+                    row['glass_type'] = g_type
+
+                if not row.get('width') or pd.isna(row['width']):
+                    row['width'] = int(w_val) * 10
+
+                if not row.get('height') or pd.isna(row['height']):
+                    row['height'] = int(h_val) * 10
+
+                if not row.get('product') or pd.isna(row['product']):
+                    row['product'] = 'EFL' if 'EFL' in text else 'WDF'
+
+                row['is_dummy'] = True
+
+            return row
+
+        # Aplikujemy funkcję tylko do przefiltrowanego podzbioru danych
+        self.production_plan_df.loc[artikel_mask] = self.production_plan_df[artikel_mask].apply(extract_and_fill,
+                                                                                                axis=1)
+
     def fill_dimensions(self):
         # 1. Niezależne mapowania dla szerokości (pierwszy człon) i długości (drugi człon)
-        width_map = {
-            '05': 540,
-            '06': 650,
-            '07': 740,
-            '09': 940,
-            '11': 1140,
-            '13': 1340
-            # dodaj kolejne...
-        }
 
-        height_map = {
-            '07': 780,
-            '09': 980,
-            '11': 1180,
-            '14': 1400,
-            '16': 1600,
-            # dodaj kolejne...
-        }
 
         def extract_and_map(row):
             # Pobieramy kody z nazwy produktu
@@ -84,11 +129,11 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
                 # Uzupełnij szerokość tylko jeśli jest pusta
                 if pd.isna(current_w) or current_w == '':
-                    current_w = width_map.get(w_code, current_w)
+                    current_w = self.width_map.get(w_code, current_w)
 
                 # Uzupełnij długość tylko jeśli jest pusta
                 if pd.isna(current_l) or current_l == '':
-                    current_l = height_map.get(l_code, current_l)
+                    current_l = self.height_map.get(l_code, current_l)
 
             return current_w, current_l
 
@@ -173,6 +218,14 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
             self.possible_products = self.ALL_PRODUCTS
             self.possible_types = self.ALL_TYPES
 
+    def handle_dummy_orders(self):
+        """
+        Can be scheduled only after middle point
+        :return:
+        """
+        if self.sum_of_scheduled_orders >= self.middle_point:
+            self.is_dummy_allowed = True
+
     def schedule_production_plan(self):
         """
         Schedule the second part of the production plan - Double glazed windows
@@ -251,6 +304,8 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                     continue
                 if not row.window_type in self.possible_types:
                     continue
+                if row.is_dummy and not self.is_dummy_allowed:
+                    continue
                 if row.width == width:
                     self.schedule_one_position_basic(row)
                     self.schedule_one_position_additional(row)
@@ -289,6 +344,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
         self.handle_efls()
+        self.handle_dummy_orders()
 
     def select_last_order(self):
         last_ord_max_quantity = self.possible_windows_before_middle_point + self.possible_sashes_before_middle_point - self.middle_point
