@@ -1,5 +1,4 @@
 import pandas as pd
-import re
 import pyperclip
 import io
 
@@ -57,7 +56,6 @@ class ProductionOrderSchedulerBasic:
         self.can_be_small_order = True  # Flag to indicate if the order can be small
         self.ignore_small_sequence_condition = False  # Flag to ignore small orders sequence condition
         self.can_be_material_unavailable = False  # Flag to indicate if the order can be material unavailable
-        self.force_type = False  # Flag to force window type for scheduling
         self.possible_types = None  # Possible window types for scheduling
         self.quantity_scheduled_in_previous_iteration = 0  # Total Quantity of windows scheduled in the previous iteration (total scheduled sum at the end of the loop)
         self.number_of_empty_loops = 0  # Counter for empty loops in the scheduling process
@@ -194,7 +192,7 @@ class ProductionOrderSchedulerBasic:
         zpp_cserie_headers = [
             "record_number",
             "Numer sekwencyjny",
-            "Nr zlecenia klienta",
+            "customer_order_number",
             "Poz. zlec. klienta",
             "goods_receiver",
             "prd_ord_num",
@@ -226,6 +224,7 @@ class ProductionOrderSchedulerBasic:
 
         headers_order = [
             # 'record_number',
+            'customer_order_number',
             'goods_receiver',
             'prd_ord_num',
             'sap_nr',
@@ -352,6 +351,8 @@ class ProductionOrderSchedulerBasic:
             # one shift production
             self.middle_point = int(self.MIDDLE_POINT_PROPORTION * self.total_sum_of_windows)
 
+        print('Middle point: ', self.middle_point)
+
     def add_scheduling_columns(self):
         """
         Add a column to the DataFrame indicating the scheduling position of each order
@@ -426,15 +427,6 @@ class ProductionOrderSchedulerBasic:
             # If the sum of scheduled orders reaches the middle point, allow material unavailability
             self.can_be_material_unavailable = True
 
-    def handle_window_type(self):
-        """
-        Handle the window type for scheduling
-        """
-        # TODO: Implement that function
-        # self.possible_types = self.windows_types
-        # self.force_type = False
-        pass
-
     def schedule_one_position_basic(self, df_row):
         """
         Schedule one position in the production plan
@@ -464,7 +456,6 @@ class ProductionOrderSchedulerBasic:
     def schedule_one_position_additional(self, df_row):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
-        self.handle_window_type()
 
     def schedule_production_plan(self):
         """
@@ -475,7 +466,6 @@ class ProductionOrderSchedulerBasic:
         is_planning_finished = False
         is_first_iteration = True
 
-        self.force_type = False
         self.possible_types = self.windows_types
 
         print("Starting production plan with possible types:", self.possible_types)
@@ -587,285 +577,6 @@ class ProductionOrderSchedulerBasic:
         """
         Schedule production orders based on the production plan and defined conditions
         """
-        num_of_orders_to_plan_as_first_positions = self.total_num_of_first_and_last_positions_orders // 2
-
         self.schedule_production_plan()
-        # self.start_or_finish_the_production_plan(planning_mode='third_part',
-        #                                          num_of_orders_to_plan=self.total_num_of_first_and_last_positions_orders - num_of_orders_to_plan_as_first_positions)
-
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
-
-
-class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R6', 'R8', '627', '847']
-    OLD_GEN_TYPES = ['627', '847']
-    NEW_GEN_TYPES = ['R6', 'R8']
-    ALL_PRODUCTS = ['WDF', 'WDT', 'EFL']
-    SMALL_ORDERS_MAX_SEQUENCE = 3
-
-    def __init__(self):
-        super().__init__()
-        self.sum_of_efls_627 = 0
-        self.sum_of_efls_847 = 0
-        self.possible_windows_before_middle_point = 0
-        self.possible_sashes_before_middle_point = 0
-
-        self.possible_products = None
-
-        self.fill_dimensions()
-
-        # Repeat these functions in child class
-        self.sort_production_plan()
-        self.get_unique_widths()
-        self.calculate_labor_coefficients()
-        self.calculate_middle_point()
-        self.calculate_efls()
-        self.calculate_products_before_middle_point()
-
-    def fill_dummy_data(self):
-        # Definiujemy mapowanie: co szukamy -> do której kolumny -> jaka wartość
-        mappings = [
-            ('EFL', 'product', 'EFL'),
-            ('627', 'window_type', '627'),
-            ('847', 'window_type', '847'),
-            ('ARTIKEL', 'width', 740)
-        ]
-
-        for search_text, target_col, fill_value in mappings:
-            # Tworzymy maskę dynamicznie dla każdej pary
-            mask = (
-                    self.production_plan_df['product_name'].str.contains(search_text, na=False) &
-                    (self.production_plan_df[target_col].isna() | (self.production_plan_df[target_col] == ''))
-            )
-
-            self.production_plan_df.loc[mask, target_col] = fill_value
-
-    def fill_dimensions(self):
-        # 1. Niezależne mapowania dla szerokości (pierwszy człon) i długości (drugi człon)
-        width_map = {
-            '05': 540,
-            '06': 650,
-            '07': 740,
-            '09': 940,
-            '11': 1140,
-            '13': 1340
-            # dodaj kolejne...
-        }
-
-        height_map = {
-            '07': 780,
-            '09': 980,
-            '11': 1180,
-            '14': 1400,
-            '16': 1600,
-            # dodaj kolejne...
-        }
-
-        def extract_and_map(row):
-            # Pobieramy kody z nazwy produktu
-            match = re.search(r'(\d{2})/(\d{2})', str(row['product_name']))
-
-            current_w = row['width']
-            current_l = row['height']
-
-            if match:
-                w_code, l_code = match.groups()
-
-                # Uzupełnij szerokość tylko jeśli jest pusta
-                if pd.isna(current_w) or current_w == '':
-                    current_w = width_map.get(w_code, current_w)
-
-                # Uzupełnij długość tylko jeśli jest pusta
-                if pd.isna(current_l) or current_l == '':
-                    current_l = height_map.get(l_code, current_l)
-
-            return current_w, current_l
-
-        # Zastosowanie transformacji
-        if not self.production_plan_df.empty:
-            self.production_plan_df[['width', 'height']] = self.production_plan_df.apply(
-                extract_and_map, axis=1, result_type='expand'
-            )
-
-    def calculate_labor_coefficients(self):
-        def get_labor_factor(row):
-            # 1. Sprawdzamy rolety (najwyższy wskaźnik/priorytet)
-            if row['roller_blind'] in ['ZAR', 'ZRV']:
-                return 1.5
-
-            # 2. Sprawdzamy typ produktu
-            val = row['product']
-            if val == 'WDT':
-                return 1.5
-            if val == 'EFL':
-                return 0.5
-
-            # 3. Wartość domyślna (jeśli żaden warunek nie jest spełniony)
-            return 1.0
-
-        # Obliczamy nową kolumnę (opcjonalnie) i aktualizujemy quantity lub tworzymy labor_time
-        if not self.production_plan_df.empty:
-            factors = self.production_plan_df.apply(get_labor_factor, axis=1)
-            self.production_plan_df['quantity'] = self.production_plan_df['quantity'] * factors
-
-    def calculate_efls(self):
-        self.sum_of_efls = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(('R6', 'R8')))]['quantity'].sum()
-        self.sum_of_efls_847 = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(('847',)))]['quantity'].sum()
-        self.sum_of_efls_627 = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(('627',)))]['quantity'].sum()
-        print(f"EFL sum: {self.sum_of_efls}")
-        print(f"EFL 847 sum: {self.sum_of_efls_847}")
-        print(f"EFL 627 sum: {self.sum_of_efls_627}")
-
-    def calculate_products_before_middle_point(self):
-        self.possible_windows_before_middle_point = self.production_plan_df[(self.production_plan_df['is_material_available']) &
-                                                                            (self.production_plan_df['product'] != 'EFL')]['quantity'].sum()
-        self.possible_sashes_before_middle_point = self.production_plan_df[(self.production_plan_df['is_material_available']) &
-                                                                           (self.production_plan_df['product'] == "EFL")]['quantity'].sum()
-        print(f'Possible windows before middle point: {self.possible_windows_before_middle_point}')
-        print(f"Possible sashes before middle point: {self.possible_sashes_before_middle_point}")
-
-    def handle_efls(self):
-        efl_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                           (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
-        efl_old_gen_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
-                                                   (self.production_plan_df['window_type'].isin(self.OLD_GEN_TYPES)) &
-                                                    (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
-        efl_r6_r8_left = efl_left - efl_old_gen_left
-
-        if self.sum_of_scheduled_orders >= self.middle_point or self.sum_of_scheduled_orders >= self.possible_windows_before_middle_point:
-            self.possible_products = self.ALL_PRODUCTS
-
-        if self.last_order_product == 'EFL' and efl_left:
-            self.possible_products = ['EFL']
-
-            if self.last_order_type in self.OLD_GEN_TYPES:
-                if efl_old_gen_left:
-                    self.possible_types = self.OLD_GEN_TYPES
-                else:
-                    self.possible_types = self.NEW_GEN_TYPES
-
-            elif self.last_order_type in self.NEW_GEN_TYPES:
-                if efl_r6_r8_left:
-                    self.possible_types = self.NEW_GEN_TYPES
-                else:
-                    self.possible_types = self.OLD_GEN_TYPES
-
-        if not efl_left:
-            self.possible_products = self.ALL_PRODUCTS
-            self.possible_types = self.ALL_TYPES
-
-    def schedule_production_plan(self):
-        """
-        Schedule the second part of the production plan - Double glazed windows
-        """
-        self.quantity_scheduled_in_previous_iteration = 0
-
-        is_planning_finished = False
-        is_first_iteration = True
-
-        self.force_type = False
-        self.possible_types = self.windows_types
-        self.possible_products = ['WDF', 'WDT']
-
-        print("Starting production plan with possible types:", self.possible_types)
-        steps = len(self.unique_widths) * 150
-        iterator = self.ping_pong_iter(self.unique_widths, start_index=self.last_width_index, steps=steps)
-        counter = 0  # Counter for the number of iterations
-        loop_counter = 0  # Counter for the number of loops
-        width = next(iterator)
-
-        repeat_iteration_over_df = False  # Flag to indicate if we need to repeat the iteration over the DataFrame
-
-        # Schedule production plan
-        while counter < steps:
-            if self.skip_widths_until_last_width:
-                # If we dropped height condition, we want to come back to last scheduled width so that the width constistency is kept if possible
-                if width != self.last_order_width:
-                    width = next(iterator, None)  # Get the next width from the iterator
-                    continue
-                else:
-                    self.skip_widths_until_last_width = False
-
-            if not is_first_iteration:
-                if not repeat_iteration_over_df and not self.skip_widths_until_last_width:
-                    counter += 1
-                    width = next(iterator, None)  # Get the next width from the iterator
-                    if width is None:
-                        # If there are no more widths to schedule, break the loop
-                        print("No more widths to schedule, breaking the loop.")
-                        print("Possible types: ", self.possible_types)
-                        print("Possible products: ", self.possible_products)
-                        print("Unique widths: ", self.unique_widths)
-                        break
-            else:
-                is_first_iteration = False
-
-            repeat_iteration_over_df = False  # Reset the flag for each iteration
-
-            for row in self.production_plan_df.itertuples():
-
-                if row.width != width:
-                    continue
-
-                # Check if all windows are scheduled
-                windows_left = self.production_plan_df[
-                    (~self.production_plan_df['is_scheduled'])
-                    ]['quantity'].sum()
-                if windows_left == 0:
-                    is_planning_finished = True
-                    break
-
-                if row.is_scheduled:
-                    continue
-                if row.prd_ord_num in self.production_order_numbers_for_first_and_last_positions:
-                    continue
-                if not self.ignore_width_matching_condition:
-                    # if we are not ignoring width matching condition, we check if the width matches the last scheduled order
-                    if self.last_order_width and row.width != self.last_order_width:
-                        continue
-                if not self.ignore_height_matching_condition:
-                    # if we are not ignoring height matching condition, we check if the height matches the last scheduled order
-                    if self.last_order_height and row.height != self.last_order_height:
-                        continue
-                if not self.ignore_small_sequence_condition:
-                    if not (self.can_be_small_order == row.is_small) and row.is_small:
-                        continue
-                if not row.is_material_available and not self.can_be_material_unavailable:
-                    continue
-                if not row.product in self.possible_products:
-                    continue
-                if not row.window_type in self.possible_types:
-                    continue
-                if row.width == width:
-                    self.schedule_one_position_basic(row)
-                    self.schedule_one_position_additional(row)
-                    if not self.last_order_is_small:
-                        repeat_iteration_over_df = True  # Set the flag to repeat the iteration over the DataFrame
-                        break
-
-            if divmod(counter, len(self.unique_widths))[1] == 0 and counter != 0 and not repeat_iteration_over_df:
-                # If we have iterated through all unique widths, check if it wasn't empty loop
-                # if it was empty loop, we need to switch off small orders sequence
-                loop_counter += 1
-                # print(f"Loop counter: {loop_counter}")
-                self.empty_loop_check()
-
-            if is_planning_finished:
-                print("Planning finished.")
-                break
-
-    def schedule_one_position_additional(self, df_row):
-        self.handle_small_orders_sequence(df_row.is_small)
-        self.handle_material_availability()
-        self.handle_window_type()
-        self.handle_efls()
-
-if __name__ == "__main__":
-
-    scheduler = ProductionOrderSchedulerM300()
-    scheduler.main_scheduling_function()
-    print(scheduler.display_df)
