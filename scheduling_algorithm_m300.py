@@ -11,6 +11,8 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
     NEW_GEN_TYPES = ['R6', 'R8']
     ALL_PRODUCTS = ['WDF', 'WDT', 'EFL']
     SMALL_ORDERS_MAX_SEQUENCE = 3
+    MIDDLE_POINT_PROPORTION = 0.6
+    TWO_SHIFTS_THRESHOLD = 180
 
     def __init__(self):
         super().__init__()
