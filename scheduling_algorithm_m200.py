@@ -222,8 +222,14 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             if self.last_order_type == 'R3' and r3_left > 0:
                 self.possible_types = ['R3']
                 print(f"==> Switch type to {self.possible_types}")
+            elif self.last_order_type == 'R3' and r3_left == 0 and r5_left > 0:
+                self.possible_types = ['R5']
+                print(f"==> Switch type to {self.possible_types}")
             elif self.last_order_type == 'R5' and r5_left > 0:
                 self.possible_types = ['R5']
+                print(f"==> Switch type to {self.possible_types}")
+            elif self.last_order_type == 'R5' and r5_left == 0 and r3_left > 0:
+                self.possible_types = ['R3']
                 print(f"==> Switch type to {self.possible_types}")
 
             if r4_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
