@@ -6,13 +6,13 @@ from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
 class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R6', 'R8', '627', '847']
+    ALL_TYPES = ['R6', 'R8', 'R8S', '627', '847']
     OLD_GEN_TYPES = ['627', '847']
-    NEW_GEN_TYPES = ['R6', 'R8']
-    ALL_PRODUCTS = ['WDF', 'WDT', 'EFL']
+    NEW_GEN_TYPES = ['R6', 'R8', 'R8S']
+    ALL_PRODUCTS = ['WDF', 'WDT', 'WSA', 'EFL']
     INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
     INITIAL_SORTING_ORDER = [True, True, True]
-    SMALL_ORDERS_MAX_SEQUENCE = 3
+    SMALL_ORDERS_MAX_SEQUENCE = 30
     MIDDLE_POINT_PROPORTION = 0.6
     TWO_SHIFTS_THRESHOLD = 180
 
@@ -185,7 +185,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
     def calculate_products_before_middle_point(self):
         self.possible_windows_before_middle_point = \
         self.production_plan_df[(self.production_plan_df['is_material_available']) &
-                                (self.production_plan_df['product'].isin(('WDT', 'WDF')))]['quantity'].sum()
+                                (self.production_plan_df['product'].isin(('WDT', 'WDF', 'WSA')))]['quantity'].sum()
         self.possible_sashes_before_middle_point = \
         self.production_plan_df[(self.production_plan_df['is_material_available']) &
                                 (self.production_plan_df['product'] == "EFL")]['quantity'].sum()
@@ -240,7 +240,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         is_first_iteration = True
 
         self.possible_types = self.windows_types
-        self.possible_products = ['WDF', 'WDT']
+        self.possible_products = ['WDF', 'WDT', 'WSA']
 
         print("Starting production plan with possible types:", self.possible_types)
         steps = len(self.unique_widths) * 150
@@ -356,15 +356,17 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
                                           (~self.production_plan_df['is_urgent_till_6_pm']) &
                                           (self.production_plan_df['quantity'] <= last_ord_max_quantity) &
+                                          (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV'))) &
                                           (self.production_plan_df['customer_order_number'].isna())].sort_values(
             by='quantity', ascending=False)
 
-        if temp_df.empty:
-            temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
-                                              (~self.production_plan_df['is_urgent_till_6_pm']) &
-                                              (self.production_plan_df[
-                                                   'quantity'] <= last_ord_max_quantity)].sort_values(
-                by='quantity', ascending=False)
+        # if temp_df.empty:
+        #     temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
+        #                                       (~self.production_plan_df['is_urgent_till_6_pm']) &
+        #                                       (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV'))) &
+        #                                       (self.production_plan_df[
+        #                                            'quantity'] <= last_ord_max_quantity)].sort_values(
+        #         by='quantity', ascending=False)
 
         # Sprawdzamy, czy temp_df nie jest pusty, aby uniknąć błędu IndexError
         if not temp_df.empty:
@@ -379,6 +381,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         Schedule production orders based on the production plan and defined conditions
         """
         self.schedule_production_plan()
-        self.schedule_production_plan_last_position()
+        if len(self.production_order_numbers_for_last_positions) > 0:
+            self.schedule_production_plan_last_position()
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
