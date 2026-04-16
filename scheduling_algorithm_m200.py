@@ -26,6 +26,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.finishing_plan = False
         self.first_type_switched = False
         self.switched_to_last_type = False
+        self.can_be_white = False
 
         self.starting_orders_scheduled = 0
         self.finishing_orders_scheduled = 0
@@ -250,6 +251,10 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         if len(temp_df) <= len(self.production_order_numbers_for_last_positions):
             self.finishing_plan = True
 
+    def handle_white(self):
+        if self.sum_of_scheduled_orders >= self.middle_point:
+            self.can_be_white = True
+
     def schedule_production_plan(self):
         """
         Schedule the second part of the production plan - Double glazed windows
@@ -334,6 +339,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                     continue
                 if row.is_dummy and not self.is_dummy_allowed:
                     continue
+                if not row.is_KF and not self.can_be_white:
+                    if row.profile_color == 'WH':
+                        continue
                 if row.width == width:
                     self.schedule_one_position_basic(row)
                     self.schedule_one_position_additional(row)
@@ -374,6 +382,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.handle_dummy_orders()
         self.handle_starting_and_finishing_plan()
         self.handle_window_type()
+        self.handle_white()
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
