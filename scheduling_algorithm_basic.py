@@ -449,6 +449,7 @@ class ProductionOrderSchedulerBasic:
         self.last_order_product = df_row.product
 
         self.sum_of_scheduled_orders += df_row.quantity
+        print(f"Window scheduled: {df_row.product_name} Quantity: {df_row.quantity}")
         print("sum of scheduled orders:", self.sum_of_scheduled_orders)
 
         self.reset_empty_loops_counter()  # Reset the empty loops counter after scheduling an order

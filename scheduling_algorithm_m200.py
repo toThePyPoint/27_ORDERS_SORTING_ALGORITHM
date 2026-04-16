@@ -25,6 +25,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.starting_plan = True
         self.finishing_plan = False
         self.first_type_switched = False
+        self.switched_to_last_type = False
 
         self.starting_orders_scheduled = 0
         self.finishing_orders_scheduled = 0
@@ -36,6 +37,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
 
         self.r4_total_sum = 0
         self.r7_total_sum = 0
+        self.r3_total_sum = 0
+        self.r5_total_sum = 0
 
         self.width_map = {
             '05': 540,
@@ -176,6 +179,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         """
         self.r4_total_sum = self.production_plan_df[self.production_plan_df['window_type'] == 'R4']['quantity'].sum()
         self.r7_total_sum = self.production_plan_df[self.production_plan_df['window_type'] == 'R7']['quantity'].sum()
+        self.r3_total_sum = self.production_plan_df[self.production_plan_df['window_type'] == 'R3']['quantity'].sum()
+        self.r5_total_sum = self.production_plan_df[self.production_plan_df['window_type'] == 'R5']['quantity'].sum()
 
         print(f"Total sum of R4: {self.r4_total_sum}")
         print(f"Total sum of R7: {self.r7_total_sum}")
@@ -184,61 +189,52 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         """
         Handle the window type for scheduling
         """
-        if self.can_be_material_unavailable:
-            r3_left = self.production_plan_df[
-                (~self.production_plan_df['is_scheduled']) &
-                (self.production_plan_df['window_type'] == 'R3') &
-                (self.production_plan_df['is_triple'] == self.last_order_is_triple)
-                ]['quantity'].sum()
-        else:
-            r3_left = self.production_plan_df[
-                (~self.production_plan_df['is_scheduled']) &
-                (self.production_plan_df['window_type'] == 'R3') &
-                (self.production_plan_df['is_triple'] == self.last_order_is_triple) &
-                (self.production_plan_df['is_material_available'])
-                ]['quantity'].sum()
+        r4_left = self.production_plan_df[
+            (~self.production_plan_df['is_scheduled']) &
+            (self.production_plan_df['window_type'] == 'R4')
+        ]['quantity'].sum()
 
-        if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
-            if self.type_to_start_with == 'R7':
+        r3_left = self.production_plan_df[
+            (~self.production_plan_df['is_scheduled']) &
+            (self.production_plan_df['window_type'] == 'R3')]['quantity'].sum()
+
+        r5_left = self.production_plan_df[
+            (~self.production_plan_df['is_scheduled']) &
+            (self.production_plan_df['window_type'] == 'R5')]['quantity'].sum()
+
+        if self.type_to_start_with == 'R7':
+            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
                 self.possible_types = ['R4']
-                print(f"Switch type to {self.possible_types}")
-            else:
+                print(f"==> Switch type to {self.possible_types}")
+                self.first_type_switched = True
+
+            # first type - R7, last type - R7 ==> R4 in one group
+            if self.first_type_switched and self.possible_types == ['R4']:
+                if r4_left == 0:
+                    if self.r3_total_sum or self.r5_total_sum:
+                        self.possible_types = ['R3', 'R5']
+                        print(f"==> Switch type to {self.possible_types}")
+                    else:
+                        self.possible_types = ['R7']
+                        print(f"==> Switch type to {self.possible_types}")
+
+            if self.last_order_type == 'R3' and r3_left > 0:
+                self.possible_types = ['R3']
+                print(f"==> Switch type to {self.possible_types}")
+            elif self.last_order_type == 'R5' and r5_left > 0:
+                self.possible_types = ['R5']
+                print(f"==> Switch type to {self.possible_types}")
+
+            if r4_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
                 self.possible_types = ['R7']
-                print(f"Switch type to {self.possible_types}")
-            self.first_type_switched = True
-        # If the sum of scheduled orders reaches the quantity of windows in the first part minus R39, force R39 type
-        # r3_trigger = self.sum_of_scheduled_orders >= self.quantity_of_windows_in_first_part - self.r3_possible_before_middle_point
-        #
-        # elif planning_mode == self.planning_modes.second_part_one_shift:
-        #     # plan r3 when other doubled glazed windows are planned and there are any r3 double
-        #     if self.can_be_material_unavailable:
-        #         windows_left = self.production_plan_df[
-        #             (~self.production_plan_df['is_scheduled']) &
-        #             (self.production_plan_df['window_type'] != 'R3') &
-        #             (~self.production_plan_df['is_triple'])
-        #             ]['quantity'].sum()
-        #     else:
-        #         windows_left = self.production_plan_df[
-        #             (~self.production_plan_df['is_scheduled']) &
-        #             (self.production_plan_df['window_type'] != 'R3') &
-        #             (~self.production_plan_df['is_triple']) &
-        #             (self.production_plan_df['is_material_available'])
-        #             ]['quantity'].sum()
-        #     r3_trigger = self.sum_of_r3_double > 0 and windows_left == 0
-        # elif planning_mode == self.planning_modes.third_part_one_shift:
-        #     # plan r3 if last order type was R3 and there are any r3 triple in production plan
-        #     r3_trigger = self.last_order_type == 'R3' and self.sum_of_r3_triple > 0
-        # else:
-        #     r3_trigger = None
-        #
-        # if r3_trigger:
-        #     print(f"R3 left:", r3_left)
-        #     if r3_left > 0:
-        #         self.possible_types = ['R3']
-        #         self.force_type = True
-        #     else:
-        #         self.possible_types = self.windows_types
-        #         self.force_type = False
+                self.switched_to_last_type = True
+                print(f"==> Switch type to {self.possible_types}")
+
+        elif self.type_to_start_with == 'R4':
+            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
+                self.possible_types = ['R7']
+                print(f"==> Switch type to {self.possible_types}")
+                self.first_type_switched = True
 
     def handle_starting_and_finishing_plan(self):
         if self.last_order_prd_num in self.production_order_numbers_for_first_positions:
@@ -249,7 +245,10 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         if self.starting_orders_scheduled >= len(self.production_order_numbers_for_first_positions):
             self.starting_plan = False
 
-        # TODO: Implement finishing the plan
+        temp_df = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                          (self.production_plan_df['window_type'].isin(self.ALL_TYPES))]
+        if len(temp_df) <= len(self.production_order_numbers_for_last_positions):
+            self.finishing_plan = True
 
     def schedule_production_plan(self):
         """
@@ -261,7 +260,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         is_first_iteration = True
 
         self.possible_types = [self.type_to_start_with]
-        self.possible_products = ['WDF', 'WDT', 'EFL']
+        # self.possible_products = ['WDF', 'WDT', 'EFL']
 
         print("Starting production plan with possible types:", self.possible_types)
         steps = len(self.unique_widths) * 150
@@ -329,8 +328,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                         continue
                 if not row.is_material_available and not self.can_be_material_unavailable:
                     continue
-                if not row.product in self.possible_products:
-                    continue
+                # if not row.product in self.possible_products:
+                #     continue
                 if not row.window_type in self.possible_types:
                     continue
                 if row.is_dummy and not self.is_dummy_allowed:
@@ -375,7 +374,6 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.handle_dummy_orders()
         self.handle_starting_and_finishing_plan()
         self.handle_window_type()
-        print(f"Window scheduled: {df_row.product_name} Quantity: {df_row.quantity}")
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
