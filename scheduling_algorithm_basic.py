@@ -324,7 +324,7 @@ class ProductionOrderSchedulerBasic:
         """
         # TODO: Usunąć/dodać ZTCH do testów
         self.production_plan_df['is_material_available'] = self.production_plan_df['system_status'].str.startswith(
-            ('ZWOL'))
+            ('ZWOL', 'ZTCH'))
 
     def get_unique_widths(self):
         """

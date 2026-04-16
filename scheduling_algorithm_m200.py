@@ -184,6 +184,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.r5_total_sum = self.production_plan_df[self.production_plan_df['window_type'] == 'R5']['quantity'].sum()
 
         print(f"Total sum of R4: {self.r4_total_sum}")
+        print(f"Total sum of R3: {self.r3_total_sum}")
+        print(f"Total sum of R5: {self.r5_total_sum}")
         print(f"Total sum of R7: {self.r7_total_sum}")
 
     def handle_window_type(self):
@@ -195,6 +197,11 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             (self.production_plan_df['window_type'] == 'R4')
         ]['quantity'].sum()
 
+        r7_left = self.production_plan_df[
+            (~self.production_plan_df['is_scheduled']) &
+            (self.production_plan_df['window_type'] == 'R7')
+        ]['quantity'].sum()
+
         r3_left = self.production_plan_df[
             (~self.production_plan_df['is_scheduled']) &
             (self.production_plan_df['window_type'] == 'R3')]['quantity'].sum()
@@ -203,7 +210,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             (~self.production_plan_df['is_scheduled']) &
             (self.production_plan_df['window_type'] == 'R5')]['quantity'].sum()
 
-        if self.type_to_start_with == 'R7':
+        if self.type_to_start_with == 'R7' and self.type_to_end_with == 'R7':
             if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
                 self.possible_types = ['R4']
                 print(f"==> Switch type to {self.possible_types}")
@@ -219,29 +226,57 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                         self.possible_types = ['R7']
                         print(f"==> Switch type to {self.possible_types}")
 
-            if self.last_order_type == 'R3' and r3_left > 0:
-                self.possible_types = ['R3']
-                print(f"==> Switch type to {self.possible_types}")
-            elif self.last_order_type == 'R3' and r3_left == 0 and r5_left > 0:
-                self.possible_types = ['R5']
-                print(f"==> Switch type to {self.possible_types}")
-            elif self.last_order_type == 'R5' and r5_left > 0:
-                self.possible_types = ['R5']
-                print(f"==> Switch type to {self.possible_types}")
-            elif self.last_order_type == 'R5' and r5_left == 0 and r3_left > 0:
-                self.possible_types = ['R3']
-                print(f"==> Switch type to {self.possible_types}")
-
             if r4_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
                 self.possible_types = ['R7']
                 self.switched_to_last_type = True
                 print(f"==> Switch type to {self.possible_types}")
 
-        elif self.type_to_start_with == 'R4':
+        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
             if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
                 self.possible_types = ['R7']
                 print(f"==> Switch type to {self.possible_types}")
                 self.first_type_switched = True
+
+            # first type - R4, last type - R4 ==> R7 in one group
+            if self.first_type_switched and self.possible_types == ['R7']:
+                if r7_left == 0:
+                    if self.r3_total_sum or self.r5_total_sum:
+                        self.possible_types = ['R3', 'R5']
+                        print(f"==> Switch type to {self.possible_types}")
+                    else:
+                        self.possible_types = ['R7']
+                        print(f"==> Switch type to {self.possible_types}")
+
+            if r7_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
+                self.possible_types = ['R4']
+                self.switched_to_last_type = True
+                print(f"==> Switch type to {self.possible_types}")
+
+        # TODO: continue here
+        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
+            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
+                self.possible_types = ['R3','R5']
+                print(f"==> Switch type to {self.possible_types}")
+                self.first_type_switched = True
+
+            # first type - R4, last type - R7 ==> R4 and R7 in one group
+            if r4_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
+                self.possible_types = ['R7']
+                self.switched_to_last_type = True
+                print(f"==> Switch type to {self.possible_types}")
+
+        if self.last_order_type == 'R3' and r3_left > 0:
+            self.possible_types = ['R3']
+            print(f"==> Switch type to {self.possible_types}")
+        elif self.last_order_type == 'R3' and r3_left == 0 and r5_left > 0:
+            self.possible_types = ['R5']
+            print(f"==> Switch type to {self.possible_types}")
+        elif self.last_order_type == 'R5' and r5_left > 0:
+            self.possible_types = ['R5']
+            print(f"==> Switch type to {self.possible_types}")
+        elif self.last_order_type == 'R5' and r5_left == 0 and r3_left > 0:
+            self.possible_types = ['R3']
+            print(f"==> Switch type to {self.possible_types}")
 
     def handle_starting_and_finishing_plan(self):
         if self.last_order_prd_num in self.production_order_numbers_for_first_positions:
@@ -415,6 +450,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             na_position='last'
         )['prd_ord_num'].head(1).tolist()
 
+        print("Last positions: ", self.production_order_numbers_for_last_positions)
+        print("First positions: ", self.production_order_numbers_for_first_positions)
         print(f"First order: {self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_first_positions[0], 'product_name'].item()}")
         print(f"Last order: {self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'product_name'].item()}")
 
@@ -462,8 +499,12 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
 
     def determine_quantity_of_first_type_sequence(self):
         # TODO: continue here
-        if self.type_to_start_with == 'R7':
+        if self.type_to_start_with == 'R7' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r7_possible_before_middle_point // 2
+        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
+            self.quantity_of_first_type_sequence = min(self.r4_possible_before_middle_point, self.middle_point)
+        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
+            self.quantity_of_first_type_sequence = self.r4_total_sum
 
     def add_is_kf_column(self):
         self.production_plan_df['is_KF'] = self.production_plan_df.apply(lambda row: row['product_name'].endswith('KF'), axis=1)
