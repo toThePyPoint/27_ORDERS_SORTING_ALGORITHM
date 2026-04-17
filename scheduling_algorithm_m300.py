@@ -80,7 +80,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         # --- Nowa część: Ekstrakcja danych z 'long_text' dla 'ARTIKEL' ---
 
         # 1. Definiujemy maskę dla wierszy zawierających 'ARTIKEL'
-        artikel_mask = self.production_plan_df['product_name'].str.contains('ARTIKEL', na=False)
+        artikel_mask = self.production_plan_df['product_name'].str.contains('ARTIKEL', case=False, na=False)
 
         # 2. Wyrażenie regularne do wyciągnięcia: R6, 9G, 134, 140
         # Grupy: (R6)(9G) (134)/(140)
