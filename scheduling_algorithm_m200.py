@@ -27,6 +27,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.first_type_switched = False
         self.switched_to_last_type = False
         self.can_be_white = False
+        self.force_kf = False
 
         self.starting_orders_scheduled = 0
         self.finishing_orders_scheduled = 0
@@ -279,6 +280,15 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             self.possible_types = ['R3']
             print(f"==> Switch type to {self.possible_types}")
 
+    def handle_kf(self, row):
+        kf_left = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                          (self.production_plan_df['is_KF'])]['quantity'].sum()
+        if row.is_KF and kf_left > 0:
+            self.force_kf = True
+
+        if kf_left <= 0:
+            self.force_kf = False
+
     def handle_starting_and_finishing_plan(self):
         if self.last_order_prd_num in self.production_order_numbers_for_first_positions:
             self.starting_orders_scheduled += 1
@@ -377,6 +387,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                     continue
                 # if not row.product in self.possible_products:
                 #     continue
+                if self.force_kf:
+                    if not row.is_KF:
+                        continue
                 if not row.window_type in self.possible_types:
                     continue
                 if row.is_dummy and not self.is_dummy_allowed:
@@ -425,6 +438,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.handle_starting_and_finishing_plan()
         self.handle_window_type()
         self.handle_white()
+        self.handle_kf(df_row)
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
@@ -492,9 +506,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         if self.r4_total_sum < self.middle_point:
             self.type_to_start_with = 'R7'
             self.type_to_end_with = 'R7'
-        elif self.r4_total_sum > 0.7 * self.total_sum_of_windows:
-            self.type_to_start_with = 'R4'
-            self.type_to_end_with = 'R4'
+        # elif self.r4_total_sum > 0.75 * self.total_sum_of_windows:
+        #     self.type_to_start_with = 'R4'
+        #     self.type_to_end_with = 'R4'
         else:
             self.type_to_start_with = 'R4'
             self.type_to_end_with = 'R7'
@@ -506,8 +520,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         # TODO: continue here
         if self.type_to_start_with == 'R7' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r7_possible_before_middle_point // 2
-        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
-            self.quantity_of_first_type_sequence = min(self.r4_possible_before_middle_point, self.middle_point)
+        # elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
+        #     self.quantity_of_first_type_sequence = min(self.r4_possible_before_middle_point, self.middle_point)
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r4_total_sum
 
