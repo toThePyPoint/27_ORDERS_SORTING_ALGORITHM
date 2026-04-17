@@ -84,7 +84,8 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
         # 2. Wyrażenie regularne do wyciągnięcia: R6, 9G, 134, 140
         # Grupy: (R6)(9G) (134)/(140)
-        regex_pattern = r'([A-Z]\d)(\d[A-Z])\s+(\d+)/(\d+)'
+        # regex_pattern = r'([A-Z]\d)(\d[A-Z])\s+(\d+)/(\d+)' # old
+        regex_pattern = r'([A-Z]\d)(\d[A-Z_]?)\s+(\d+)/(\d+)' # improved
 
         def extract_and_fill(row):
             text = str(row['long_text'])

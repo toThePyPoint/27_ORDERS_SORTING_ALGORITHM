@@ -67,11 +67,11 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.get_unique_widths()
         self.calculate_middle_point()
         self.add_is_kf_column()
-        self.count_quantities_of_each_type_before_middle_point()
         self.count_r3_r4_r5_r7_orders()
         self.determine_type_to_start_with_and_end_with()
-        self.determine_quantity_of_first_type_sequence()
         self.gather_production_order_numbers_for_first_and_last_positions()
+        self.count_quantities_of_each_type_before_middle_point()
+        self.determine_quantity_of_first_type_sequence()
         self.num_of_first_positions = len(self.production_order_numbers_for_first_positions)
         self.num_of_last_positions = len(self.production_order_numbers_for_last_positions)
 
@@ -99,11 +99,11 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         # --- Nowa część: Ekstrakcja danych z 'long_text' dla 'ARTIKEL' ---
 
         # 1. Definiujemy maskę dla wierszy zawierających 'ARTIKEL'
-        artikel_mask = self.production_plan_df['product_name'].str.contains('ARTIKEL', na=False)
+        artikel_mask = self.production_plan_df['product_name'].str.contains('ARTIKEL', case=False, na=False)
 
         # 2. Wyrażenie regularne do wyciągnięcia: R6, 9G, 134, 140
         # Grupy: (R6)(9G) (134)/(140)
-        regex_pattern = r'([A-Z]\d)(\d[A-Z])\s+(\d+)/(\d+)'
+        regex_pattern = r'([A-Z]\d)(\d[A-Z_]?)\s+(\d+)/(\d+)'
 
         def extract_and_fill(row):
             text = str(row['long_text'])
@@ -187,6 +187,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         print(f"Total sum of R3: {self.r3_total_sum}")
         print(f"Total sum of R5: {self.r5_total_sum}")
         print(f"Total sum of R7: {self.r7_total_sum}")
+        print(f"Total sum of windows: {self.total_sum_of_windows}")
 
     def handle_window_type(self):
         """
@@ -432,6 +433,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.production_order_numbers_for_first_positions = self.production_plan_df[
             (self.production_plan_df['quantity'] >= 12) &
             (self.production_plan_df['is_material_available']) &
+            (self.production_plan_df['profile_color'] != 'WH') &
             (self.production_plan_df['window_type'] == self.type_to_start_with)
         ].sort_values(
             by=['is_urgent_till_6_pm', 'customer_order_number'],
@@ -469,14 +471,17 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.production_plan_df[(self.production_plan_df['window_type'] == 'R4') &
                                 (self.production_plan_df['is_material_available']) &
                                 ((self.production_plan_df['profile_color'] != 'WH') | (
-                                            self.production_plan_df['is_KF'] == True))
+                                            self.production_plan_df['is_KF'] == True)) &
+                                (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_last_positions))
                                 ]['quantity'].sum()
 
         self.r7_possible_before_middle_point = \
         self.production_plan_df[(self.production_plan_df['window_type'] == 'R7') &
                                 (self.production_plan_df['is_material_available']) &
                                 ((self.production_plan_df['profile_color'] != 'WH') | (
-                                            self.production_plan_df['is_KF'] == True))
+                                            self.production_plan_df['is_KF'] == True)) &
+                                (~self.production_plan_df['prd_ord_num'].isin(
+                                    self.production_order_numbers_for_last_positions))
                                 ]['quantity'].sum()
 
         self.r3_possible_before_middle_point = self.production_plan_df[
@@ -505,6 +510,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             self.quantity_of_first_type_sequence = min(self.r4_possible_before_middle_point, self.middle_point)
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r4_total_sum
+
+        print(self.r4_possible_before_middle_point)
+        print("Quantity Of First Type Sequence is", self.quantity_of_first_type_sequence)
 
     def add_is_kf_column(self):
         self.production_plan_df['is_KF'] = self.production_plan_df.apply(lambda row: row['product_name'].endswith('KF'), axis=1)
