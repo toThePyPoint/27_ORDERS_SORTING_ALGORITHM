@@ -330,8 +330,11 @@ class ProductionOrderSchedulerBasic:
         """
         Get unique widths of windows in the production plan
         """
+        print(self.__class__.__name__)
         self.unique_widths = list(set(self.production_plan_df['width'].unique()))
+        print(f"Unique widths: {self.unique_widths}")
         self.unique_widths.sort()  # Sort the unique widths for better readability
+        print(f"Unique widths: {self.unique_widths}")
 
     def calculate_num_of_shifts(self):
         if self.total_sum_of_windows >= self.TWO_SHIFTS_THRESHOLD:

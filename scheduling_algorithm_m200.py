@@ -6,7 +6,7 @@ from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
 class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R3', 'R4', 'R5', 'R7', '435', '439']
+    ALL_TYPES = ['R3', 'R4', 'R5', 'R7', '435', '439', '735']
     OLD_GEN_TYPES = ['435', '439', '735']
     NEW_GEN_TYPES = ['R3', 'R4', 'R5', 'R7']
     ALL_PRODUCTS = ['WDF', 'WDT', 'WDA', 'WRA', 'EFL']
@@ -20,17 +20,23 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.possible_products = None
         self.type_to_start_with = None # either R4 or R7
         self.type_to_end_with = None # either R4 or R7
+        self.last_position_width = None
+        self.last_position_order_number = None
 
         self.is_dummy_allowed = False
         self.starting_plan = True
         self.finishing_plan = False
+        self.finishing_plan_last_position = False
         self.first_type_switched = False
         self.switched_to_last_type = False
         self.can_be_white = False
         self.force_kf = False
+        self.skip_last_order_width = False
+        # self.skip_last_order_width_entered = False
+        self.increased_last_orders_list = False
 
         self.starting_orders_scheduled = 0
-        self.finishing_orders_scheduled = 0
+        # self.finishing_orders_scheduled = 0
         self.quantity_of_first_type_sequence = 0
         self.r3_possible_before_middle_point = 0
         self.r4_possible_before_middle_point = 0
@@ -289,11 +295,23 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         if kf_left <= 0:
             self.force_kf = False
 
+    def handle_last_order_size_consistency(self):
+        if self.type_to_end_with in self.possible_types and self.type_to_end_with != self.type_to_start_with and not self.increased_last_orders_list:
+            temp_df = self.production_plan_df[
+                (~self.production_plan_df['is_scheduled']) &
+                (self.production_plan_df['width'] == self.last_position_width) &
+                (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_first_positions)) &
+                (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_last_positions)) &
+                (self.production_plan_df['window_type'] == self.type_to_end_with)
+                ]['prd_ord_num'].tolist()
+
+            self.production_order_numbers_for_last_positions += temp_df
+            print("Last position order numbers: ", self.production_order_numbers_for_last_positions)
+            self.increased_last_orders_list = True
+
     def handle_starting_and_finishing_plan(self):
         if self.last_order_prd_num in self.production_order_numbers_for_first_positions:
             self.starting_orders_scheduled += 1
-        if self.last_order_prd_num in self.production_order_numbers_for_last_positions:
-            self.finishing_orders_scheduled += 1
 
         if self.starting_orders_scheduled >= len(self.production_order_numbers_for_first_positions):
             self.starting_plan = False
@@ -301,7 +319,12 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         temp_df = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
                                           (self.production_plan_df['window_type'].isin(self.ALL_TYPES))]
         if len(temp_df) <= len(self.production_order_numbers_for_last_positions):
+            print("TRIGGER FINISHING PLAN")
             self.finishing_plan = True
+
+        if len(temp_df) <= 1:
+            print("TRIGGER FINISHING PLAN LAST POSITION")
+            self.finishing_plan_last_position = True
 
     def handle_white(self):
         if self.sum_of_scheduled_orders >= self.middle_point:
@@ -369,6 +392,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                 if not self.finishing_plan:
                     if row.prd_ord_num in self.production_order_numbers_for_last_positions:
                         continue
+                if not self.finishing_plan_last_position:
+                    if row.prd_ord_num == self.last_position_order_number:
+                        continue
                 if self.starting_plan:
                     if row.prd_ord_num not in self.production_order_numbers_for_first_positions:
                         continue
@@ -435,10 +461,11 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
         self.handle_dummy_orders()
-        self.handle_starting_and_finishing_plan()
         self.handle_window_type()
         self.handle_white()
         self.handle_kf(df_row)
+        self.handle_last_order_size_consistency()
+        self.handle_starting_and_finishing_plan()
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
@@ -466,10 +493,12 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             na_position='last'
         )['prd_ord_num'].head(1).tolist()
 
+        self.last_position_width = self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'width'].item()
+        self.last_position_order_number = self.production_order_numbers_for_last_positions[0]
+
         print("Last positions: ", self.production_order_numbers_for_last_positions)
         print("First positions: ", self.production_order_numbers_for_first_positions)
-        print(f"First order: {self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_first_positions[0], 'product_name'].item()}")
-        print(f"Last order: {self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'product_name'].item()}")
+        print("Last position width: ", self.last_position_width)
 
     def main_scheduling_function(self):
         """
@@ -530,4 +559,3 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
 
     def add_is_kf_column(self):
         self.production_plan_df['is_KF'] = self.production_plan_df.apply(lambda row: row['product_name'].endswith('KF'), axis=1)
-
