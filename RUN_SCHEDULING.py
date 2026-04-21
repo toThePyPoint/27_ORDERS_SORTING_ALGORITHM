@@ -1,4 +1,6 @@
 import sys
+
+from scheduling_algorithm_m320 import ProductionOrderSchedulerM320
 from scheduling_algorithm_p100 import ProductionOrderSchedulerP100
 from scheduling_algorithm_m300 import ProductionOrderSchedulerM300
 from scheduling_algorithm_m200 import ProductionOrderSchedulerM200
@@ -17,7 +19,9 @@ if __name__ == "__main__":
     elif assembly_line == 'M200':
         scheduler = ProductionOrderSchedulerM200()
         scheduler.main_scheduling_function()
-
+    elif assembly_line == 'M320':
+        scheduler = ProductionOrderSchedulerM320()
+        scheduler.main_scheduling_function()
 
 # if __name__ == "__main__":
 #
