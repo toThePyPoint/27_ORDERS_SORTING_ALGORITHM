@@ -32,11 +32,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.can_be_white = False
         self.force_kf = False
         self.skip_last_order_width = False
-        # self.skip_last_order_width_entered = False
         self.increased_last_orders_list = False
 
         self.starting_orders_scheduled = 0
-        # self.finishing_orders_scheduled = 0
         self.quantity_of_first_type_sequence = 0
         self.r3_possible_before_middle_point = 0
         self.r4_possible_before_middle_point = 0
@@ -67,7 +65,15 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             # dodaj kolejne...
         }
 
+        self.old_gen_types_map = {
+            '435': 'R4',
+            '439': 'R4',
+            '735': 'R7',
+            '739': 'R7',
+        }
+
         self.fill_dimensions()
+        self.convert_old_gen_types_to_new_gen_types()
 
         # Repeat these functions in child class
         self.sort_production_plan()
@@ -559,3 +565,6 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
 
     def add_is_kf_column(self):
         self.production_plan_df['is_KF'] = self.production_plan_df.apply(lambda row: row['product_name'].endswith('KF'), axis=1)
+
+    def convert_old_gen_types_to_new_gen_types(self):
+        self.production_plan_df['window_type'] = self.production_plan_df['window_type'].replace(self.old_gen_types_map)
