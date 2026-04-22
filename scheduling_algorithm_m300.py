@@ -9,9 +9,13 @@ from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
 class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R6', 'R8', 'R8S', '627', '847', '610']
-    OLD_GEN_TYPES = ['627', '847', '610']
+    OLD_GEN_TYPES = [
+        '610', '617', '619', '620', '622', '623', '624', '625',
+        '626', '627', '628', '629', '644', '645', '647', '648',
+        '649', '840', '844', '845', '846', '847', '848', '849'
+    ]
     NEW_GEN_TYPES = ['R6', 'R8', 'R8S']
+    ALL_TYPES = NEW_GEN_TYPES + OLD_GEN_TYPES
     ALL_PRODUCTS = ['WDF', 'WDT', 'WSA', 'EFL']
     INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
     INITIAL_SORTING_ORDER = [True, True, True]
@@ -68,9 +72,30 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         # Definiujemy mapowanie: co szukamy -> do której kolumny -> jaka wartość
         mappings = [
             ('EFL', 'product', 'EFL'),
-            ('627', 'window_type', '627'),
-            ('847', 'window_type', '847'),
             ('610', 'window_type', '610'),
+            ('617', 'window_type', '617'),
+            ('619', 'window_type', '619'),
+            ('620', 'window_type', '620'),
+            ('622', 'window_type', '622'),
+            ('623', 'window_type', '623'),
+            ('624', 'window_type', '624'),
+            ('625', 'window_type', '625'),
+            ('626', 'window_type', '626'),
+            ('627', 'window_type', '627'),
+            ('628', 'window_type', '628'),
+            ('629', 'window_type', '629'),
+            ('644', 'window_type', '644'),
+            ('645', 'window_type', '645'),
+            ('647', 'window_type', '647'),
+            ('648', 'window_type', '648'),
+            ('649', 'window_type', '649'),
+            ('840', 'window_type', '840'),
+            ('844', 'window_type', '844'),
+            ('845', 'window_type', '845'),
+            ('846', 'window_type', '846'),
+            ('847', 'window_type', '847'),
+            ('848', 'window_type', '848'),
+            ('849', 'window_type', '849'),
         ]
 
         self.production_plan_df['is_dummy'] = False
@@ -376,6 +401,14 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                                           (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV'))) &
                                           (self.production_plan_df['customer_order_number'].isna())].sort_values(
             by='quantity', ascending=False)
+
+        if temp_df.empty:
+            temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
+                                              (~self.production_plan_df['is_urgent_till_6_pm']) &
+                                              (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
+                                              (self.production_plan_df['quantity'] <= last_ord_max_quantity) &
+                                              (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV')))].sort_values(
+                by='quantity', ascending=False)
 
         if not temp_df.empty:
             order_num = temp_df['prd_ord_num'].iloc[0]
