@@ -69,6 +69,8 @@ class ProductionOrderSchedulerP100:
         self.last_size_index = 0  # Index of the last size in the unique sizes list
 
         self.production_order_numbers_for_first_and_last_positions = []  # List to store production order numbers for first and last positions
+        self.production_order_numbers_for_first_positions = []
+        self.production_order_numbers_for_last_positions = []
 
         self.windows_types = ['R3', 'R4', 'R5', 'R7']
         self.milled_types = ['R4', 'R7']
@@ -171,6 +173,37 @@ class ProductionOrderSchedulerP100:
                 direction *= -1
             else:
                 index += direction
+
+    @staticmethod
+    def get_balanced_order_lists(df):
+        list_1 = []
+        list_2 = []
+
+        # Grupowanie po wysokości
+        for height, group in df.groupby('height'):
+            # Sortowanie malejąco po quantity (algorytm zachłanny)
+            group = group.sort_values(by='quantity', ascending=False)
+
+            sum_g1 = 0
+            sum_g2 = 0
+
+            # Lokalne listy dla danej grupy wysokości
+            g1 = []
+            g2 = []
+
+            for _, row in group.iterrows():
+                if sum_g1 <= sum_g2:
+                    g1.append(row['prd_ord_num'])
+                    sum_g1 += row['quantity']
+                else:
+                    g2.append(row['prd_ord_num'])
+                    sum_g2 += row['quantity']
+
+            # Dodajemy wyniki do list głównych
+            list_1.extend(g1)
+            list_2.extend(g2)
+
+        return list_1, list_2
 
     def display_view(self):
         cols_to_display = [
@@ -386,18 +419,24 @@ class ProductionOrderSchedulerP100:
         """
         Gather production order numbers for first and last positions in the production plan
         """
-        self.production_order_numbers_for_first_and_last_positions = self.production_plan_df[
+        temp_df = self.production_plan_df[
             (self.production_plan_df['sap_nr'].isin(self.SAP_NUMBERS_FOR_FIRST_AND_LAST_POSITIONS)) &
             (self.production_plan_df['quantity'] >= 12)
-            ]['prd_ord_num'].tolist()
+            ]
+        self.production_order_numbers_for_first_and_last_positions = temp_df['prd_ord_num'].tolist()
 
         if len(self.production_order_numbers_for_first_and_last_positions) < 2:
-            self.production_order_numbers_for_first_and_last_positions = self.production_plan_df[
+            temp_df = self.production_plan_df[
                 (self.production_plan_df['quantity'] >= 12) &
                 (self.production_plan_df['width'].isin(self.WIDTHS_FOR_FIRST_AND_LAST_POSITIONS)) &
                 (self.production_plan_df['height'].isin(self.HEIGHTS_FOR_FIRST_AND_LAST_POSITIONS)) &
                 (self.production_plan_df['glass_type'].isin(self.GLASS_TYPES_FOR_FIRST_AND_LAST_POSITIONS))
-                ]['prd_ord_num'].head(2).tolist()
+                ]
+            self.production_order_numbers_for_first_and_last_positions = temp_df['prd_ord_num'].head(2).tolist()
+
+        self.production_order_numbers_for_first_positions, self.production_order_numbers_for_last_positions = self.get_balanced_order_lists(temp_df)
+        print("first", self.production_order_numbers_for_first_positions)
+        print("last", self.production_order_numbers_for_last_positions)
 
     def count_first_and_last_positions_orders(self):
         """
@@ -1060,7 +1099,7 @@ class ProductionOrderSchedulerP100:
                 print("Third part planning finished.")
                 break
 
-    def start_or_finish_the_production_plan(self, planning_mode, num_of_orders_to_plan):
+    def start_or_finish_the_production_plan(self, planning_mode, num_of_orders_to_plan, orders_list):
         """Select first or last positions to production plan R79 7/11 and 7/14"""
         self.quantity_scheduled_in_previous_iteration = 0
 
@@ -1075,7 +1114,7 @@ class ProductionOrderSchedulerP100:
                     # if we are not ignoring height matching condition, we check if the height matches the last scheduled order
                     if self.last_order_height and row.height != self.last_order_height:
                         continue
-                if row.prd_ord_num in self.production_order_numbers_for_first_and_last_positions:
+                if row.prd_ord_num in orders_list:
                     self.schedule_one_position(row, planning_mode=planning_mode)
                     counter += 1
                     if counter >= num_of_orders_to_plan:
@@ -1089,7 +1128,8 @@ class ProductionOrderSchedulerP100:
         num_of_orders_to_plan_as_first_positions = self.total_num_of_first_and_last_positions_orders // 2
 
         self.start_or_finish_the_production_plan(planning_mode=self.planning_modes.first_part_two_shifts,
-                                                 num_of_orders_to_plan=num_of_orders_to_plan_as_first_positions)
+                                                 num_of_orders_to_plan=len(self.production_order_numbers_for_first_positions),
+                                                 orders_list=self.production_order_numbers_for_first_positions)
 
         if self.num_of_shifts == 2:
             self.schedule_first_part_of_production_plan(planning_mode=self.planning_modes.first_part_two_shifts)
@@ -1108,7 +1148,8 @@ class ProductionOrderSchedulerP100:
 
         self.schedule_third_part_of_production_plan(planning_mode=self.planning_modes.third_part_740)
         self.start_or_finish_the_production_plan(planning_mode='third_part',
-                                                 num_of_orders_to_plan=self.total_num_of_first_and_last_positions_orders - num_of_orders_to_plan_as_first_positions)
+                                                 num_of_orders_to_plan=len(self.production_order_numbers_for_last_positions),
+                                                 orders_list=self.production_order_numbers_for_last_positions)
 
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
