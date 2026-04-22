@@ -1,13 +1,16 @@
+from locale import windows_locale
+
 import pandas as pd
 import re
 
+from setuptools.windows_support import windows_only
 
 from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
 class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
-    ALL_TYPES = ['R6', 'R8', 'R8S', '627', '847']
-    OLD_GEN_TYPES = ['627', '847']
+    ALL_TYPES = ['R6', 'R8', 'R8S', '627', '847', '610']
+    OLD_GEN_TYPES = ['627', '847', '610']
     NEW_GEN_TYPES = ['R6', 'R8', 'R8S']
     ALL_PRODUCTS = ['WDF', 'WDT', 'WSA', 'EFL']
     INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
@@ -18,15 +21,18 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
     def __init__(self):
         super().__init__()
+        self.finishing_plan = False
         self.sum_of_efls_627 = 0
         self.sum_of_efls_847 = 0
         self.possible_windows_before_middle_point = 0
         self.possible_sashes_before_middle_point = 0
         self.last_production_order_quantity = 0  # quantity of last production order
+        self.windows_quantities_not_possible_before_middle_point = 0
 
         self.possible_products = None
 
         self.is_dummy_allowed = False
+        self.is_repacking_allowed = False
 
         self.width_map = {
             '05': 540,
@@ -64,6 +70,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
             ('EFL', 'product', 'EFL'),
             ('627', 'window_type', '627'),
             ('847', 'window_type', '847'),
+            ('610', 'window_type', '610'),
         ]
 
         self.production_plan_df['is_dummy'] = False
@@ -186,17 +193,31 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
     def calculate_products_before_middle_point(self):
         self.possible_windows_before_middle_point = \
         self.production_plan_df[(self.production_plan_df['is_material_available']) &
+                                (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
                                 (self.production_plan_df['product'].isin(('WDT', 'WDF', 'WSA')))]['quantity'].sum()
         self.possible_sashes_before_middle_point = \
         self.production_plan_df[(self.production_plan_df['is_material_available']) &
+                                (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
                                 (self.production_plan_df['product'] == "EFL")]['quantity'].sum()
         print(f'Possible windows before middle point: {self.possible_windows_before_middle_point}')
         print(f"Possible sashes before middle point: {self.possible_sashes_before_middle_point}")
 
+    def handle_starting_and_finishing_plan(self):
+        temp_df = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                          (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
+                                          (self.production_plan_df['window_type'].isin(self.ALL_TYPES))]
+        print("len(temp_df): ", len(temp_df))
+        print("len(production order numbers for last posistions: ", len(self.production_order_numbers_for_last_positions))
+        if len(temp_df) <= len(self.production_order_numbers_for_last_positions):
+            print("TRIGGER FINISHING PLAN")
+            self.finishing_plan = True
+
     def handle_efls(self):
         efl_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
+                                           (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
                                            (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
         efl_old_gen_left = self.production_plan_df[(self.production_plan_df['product'] == 'EFL') &
+                                                   (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
                                                    (self.production_plan_df['window_type'].isin(self.OLD_GEN_TYPES)) &
                                                    (~self.production_plan_df['is_scheduled'])]['quantity'].sum()
         efl_r6_r8_left = efl_left - efl_old_gen_left
@@ -230,6 +251,12 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
         """
         if self.sum_of_scheduled_orders >= self.middle_point:
             self.is_dummy_allowed = True
+
+    def handle_repacking(self):
+        temp_df = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
+                                          (~self.production_plan_df['window_type'].isna())]
+        unique_values = temp_df['prd_ord_type'].unique()
+        self.is_repacking_allowed = len(unique_values) == 1 and unique_values[0] == 'RO07'
 
     def schedule_production_plan(self):
         """
@@ -290,7 +317,7 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
 
                 if row.is_scheduled:
                     continue
-                if row.prd_ord_num in self.production_order_numbers_for_last_positions:
+                if not self.finishing_plan and row.prd_ord_num in self.production_order_numbers_for_last_positions:
                     continue
                 if not self.ignore_width_matching_condition:
                     # if we are not ignoring width matching condition, we check if the width matches the last scheduled order
@@ -311,6 +338,8 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                     continue
                 if row.is_dummy and not self.is_dummy_allowed:
                     continue
+                if row.prd_ord_type == "RO07" and not self.is_repacking_allowed:
+                    continue
                 if row.width == width:
                     self.schedule_one_position_basic(row)
                     self.schedule_one_position_additional(row)
@@ -329,60 +358,36 @@ class ProductionOrderSchedulerM300(ProductionOrderSchedulerBasic):
                 print("Planning finished.")
                 break
 
-    def schedule_production_plan_last_position(self):
-        """
-        Schedule last position
-        """
-        self.quantity_scheduled_in_previous_iteration = 0
-
-        print("Starting last position planning:", self.possible_types)
-
-        for row in self.production_plan_df.itertuples():
-
-            if row.is_scheduled:
-                continue
-            if row.prd_ord_num in self.production_order_numbers_for_last_positions:
-                self.schedule_one_position_basic(row)
-                self.schedule_one_position_additional(row)
-
     def schedule_one_position_additional(self, df_row):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
         self.handle_efls()
         self.handle_dummy_orders()
+        self.handle_starting_and_finishing_plan()
+        self.handle_repacking()
 
     def select_last_order(self):
         last_ord_max_quantity = self.possible_windows_before_middle_point + self.possible_sashes_before_middle_point - self.middle_point
         last_ord_max_quantity = min(last_ord_max_quantity, 6)
         temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
                                           (~self.production_plan_df['is_urgent_till_6_pm']) &
+                                          (~self.production_plan_df['prd_ord_type'].isin(['RO07'])) &
                                           (self.production_plan_df['quantity'] <= last_ord_max_quantity) &
                                           (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV'))) &
                                           (self.production_plan_df['customer_order_number'].isna())].sort_values(
             by='quantity', ascending=False)
 
-        # if temp_df.empty:
-        #     temp_df = self.production_plan_df[(self.production_plan_df['product'] != 'EFL') &
-        #                                       (~self.production_plan_df['is_urgent_till_6_pm']) &
-        #                                       (~self.production_plan_df['roller_blind'].isin(('ZAR', 'ZRV'))) &
-        #                                       (self.production_plan_df[
-        #                                            'quantity'] <= last_ord_max_quantity)].sort_values(
-        #         by='quantity', ascending=False)
-
-        # Sprawdzamy, czy temp_df nie jest pusty, aby uniknąć błędu IndexError
         if not temp_df.empty:
             order_num = temp_df['prd_ord_num'].iloc[0]
             self.production_order_numbers_for_last_positions.append(order_num)
             self.last_production_order_quantity = temp_df['quantity'].iloc[0]
 
-        print(self.production_order_numbers_for_last_positions)
+        print("Production order numbers last positions: ", self.production_order_numbers_for_last_positions)
 
     def main_scheduling_function(self):
         """
         Schedule production orders based on the production plan and defined conditions
         """
         self.schedule_production_plan()
-        if len(self.production_order_numbers_for_last_positions) > 0:
-            self.schedule_production_plan_last_position()
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()

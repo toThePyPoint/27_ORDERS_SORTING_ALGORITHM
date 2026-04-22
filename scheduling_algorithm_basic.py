@@ -10,6 +10,7 @@ class ProductionOrderSchedulerBasic:
     TWO_SHIFTS_THRESHOLD = 180  # Threshold for two shifts in quantity
     MIDDLE_POINT_PROPORTION = 0.6  # Proportion of the sum of windows per shift to determine the middle point
     NOT_SCHEDULED_NUMBER = 9999  # number used in Scheduling position column, it shows posistions which were not scheduled
+    REPACKING_NUMBER = 1111
     INITIAL_SORTING_COLUMNS = ['glass_type', 'width', 'height']
     INITIAL_SORTING_ORDER = [True, True, True]
     TRIPLE_GLAZED_PANES = []
@@ -144,6 +145,7 @@ class ProductionOrderSchedulerBasic:
             'is_material_available',
             'scheduling_position',
             'is_scheduled',
+            'prd_ord_type'
             # 'size',
             # 'copy_pos'
         ]
@@ -213,7 +215,7 @@ class ProductionOrderSchedulerBasic:
             "Merkmalwert 01",
             "variant",
             "roller_blind",
-            "Rodzaj zlecenia",
+            "prd_ord_type",
             "Merkmalwert 14",
             "Merkmalwert 20",
             "Merkmalwert 12",
@@ -238,7 +240,8 @@ class ProductionOrderSchedulerBasic:
             'window_type',
             'variant',
             'product',
-            'roller_blind'
+            'roller_blind',
+            'prd_ord_type'
         ]
 
         header_to_be_deleted = [header for header in zpp_cserie_headers if header not in headers_order]
