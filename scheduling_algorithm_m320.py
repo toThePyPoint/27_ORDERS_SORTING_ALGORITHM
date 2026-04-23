@@ -13,6 +13,7 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
     TWO_SHIFTS_THRESHOLD = 240
     SMALL_ORDERS_MAX_SEQUENCE = 30
     UNTYPICAL_HEIGHTS_AFTER_MIDDLE_POINT = [70, 50]
+    UNTYPICAL_WIDTHS_AFTER_MIDDLE_POINT = [70, 50]
 
     def __init__(self):
         super().__init__()
@@ -31,6 +32,8 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
 
         self.starting_orders_scheduled = 0
         self.quantity_of_first_type_sequence = 0
+
+        self.ignore_untypical_sizes_condition = False
 
         self.width_map = {
             '05': 540,
@@ -249,8 +252,10 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
                     continue
                 if row.is_dummy and not self.is_dummy_allowed:
                     continue
-                if not self.untypical_heights_allowed:
+                if not self.untypical_heights_allowed and not self.ignore_untypical_sizes_condition:
                     if row.height in self.UNTYPICAL_HEIGHTS_AFTER_MIDDLE_POINT:
+                        continue
+                    if row.width in self.UNTYPICAL_WIDTHS_AFTER_MIDDLE_POINT:
                         continue
                 if row.width == width:
                     self.schedule_one_position_basic(row)
@@ -291,16 +296,18 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         self.handle_material_availability()
         self.handle_starting_and_finishing_plan()
         self.handle_dummy_orders()
-        self.handle_untypical_heights()
+        self.handle_untypical_heights_and_widths()
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
         Gather production order numbers for first and last positions in the production plan
         """
         self.production_order_numbers_for_first_positions = self.production_plan_df[
-            (self.production_plan_df['is_material_available'])
+            (self.production_plan_df['is_material_available']) &
+            (~self.production_plan_df['width'].isin(self.UNTYPICAL_WIDTHS_AFTER_MIDDLE_POINT)) &
+            (~self.production_plan_df['height'].isin(self.UNTYPICAL_HEIGHTS_AFTER_MIDDLE_POINT))
         ].sort_values(
-            by=['is_urgent_till_6_pm', 'is_urgent_till_2_pm', 'customer_order_number'],
+            by=['is_urgent_till_2_pm', 'is_urgent_till_6_pm', 'customer_order_number'],
             ascending=[False, False, True],
             na_position='last'
         )['prd_ord_num'].head(1).tolist()
@@ -324,6 +331,46 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         if self.sum_of_scheduled_orders >= self.middle_point:
             self.is_dummy_allowed = True
 
-    def handle_untypical_heights(self):
+    def handle_untypical_heights_and_widths(self):
         if self.sum_of_scheduled_orders >= self.middle_point:
             self.untypical_heights_allowed = True
+
+    def empty_loop_check(self):
+        """
+        Check if the loop was empty
+        If it was empty, reset the ignore_small_sequence_condition flag
+        """
+        temp_scheduled_orders = self.sum_of_scheduled_orders - self.quantity_scheduled_in_previous_iteration
+        if temp_scheduled_orders == 0:
+            self.number_of_empty_loops += 1
+
+        if self.number_of_empty_loops == 2:
+            self.ignore_height_matching_condition = True  # Ignore height matching condition after 4 empty loops
+            self.skip_widths_until_last_width = True  # Skip widths until the last width in the unique widths list
+
+        if self.number_of_empty_loops == 4:
+            self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
+            self.ignore_height_matching_condition = False
+
+        if self.number_of_empty_loops >= 6:
+            self.ignore_width_matching_condition = True  # Ignore width matching condition after 2 empty loops
+            self.ignore_height_matching_condition = True
+
+        if self.number_of_empty_loops >= 8:
+            self.ignore_untypical_sizes_condition = True
+
+        if self.number_of_empty_loops >= 10:
+            self.ignore_small_sequence_condition = True
+
+        self.quantity_scheduled_in_previous_iteration = self.sum_of_scheduled_orders
+
+    def reset_empty_loops_counter(self):
+        """
+        Reset the counter for empty loops in the scheduling process and reset the ignore_small_sequence_condition flag
+        """
+        self.ignore_small_sequence_condition = False  # Reset the flag for ignoring small orders sequence condition
+        self.ignore_width_matching_condition = False
+        self.ignore_height_matching_condition = False  # Reset the flag for ignoring height matching condition
+        self.skip_widths_until_last_width = False  # Reset the flag for skipping widths until the last width in the unique widths list
+        self.ignore_untypical_sizes_condition = False
+        self.number_of_empty_loops = 0  # Reset the counter for empty loops
