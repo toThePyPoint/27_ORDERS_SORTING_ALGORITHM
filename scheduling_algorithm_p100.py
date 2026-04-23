@@ -19,6 +19,7 @@ class ProductionOrderSchedulerP100:
     SMALL_ORDERS_MAX_SEQUENCE = 3  # Maximum sequence of small orders in the production plan
     TRIPLE_GLAZED_PANES = ['9', '9C']
     URGENT_ORDERS_RECEIVERS_2_pm = ['2101/Polska/C', '3301/Węgry/C']
+    URGENT_ORDERS_RECEIVERS_2_pm_DISPATCH_DATE_EQ_PROD_DATE = ['PB Spółka z ograniczoną']
     SAP_NUMBERS_FOR_FIRST_AND_LAST_POSITIONS = ['808965', '808966', '839134', '839135']
     WIDTHS_FOR_FIRST_AND_LAST_POSITIONS = [740]
     HEIGHTS_FOR_FIRST_AND_LAST_POSITIONS = [1180, 1400]
@@ -227,6 +228,8 @@ class ProductionOrderSchedulerP100:
             'scheduling_position',
             'is_scheduled',
             'is_milled',
+            'dispatch_date',
+            'production_date'
             # 'size',
             # 'copy_pos'
         ]
@@ -281,7 +284,7 @@ class ProductionOrderSchedulerP100:
             "sap_nr",
             "product_name",
             "quantity",
-            "Data dostępn. mat.",
+            "dispatch_date",
             "Langtext",
             "system_status",
             "glass_type",
@@ -292,7 +295,7 @@ class ProductionOrderSchedulerP100:
             "Merkmalwert 17",
             "window_type",
             "Merkmalwert 16",
-            "Rozpoczęcie według harmonogramu",
+            "production_date",
             "Merkmalwert 01",
             "variant",
             "Merkmalwert 03",
@@ -318,6 +321,8 @@ class ProductionOrderSchedulerP100:
             'height',
             'window_type',
             'variant',
+            'dispatch_date',
+            'production_date'
         ]
 
         header_to_be_deleted = [header for header in zpp_cserie_headers if header not in headers_order]
@@ -331,8 +336,8 @@ class ProductionOrderSchedulerP100:
 
     def sort_production_plan(self):
         self.production_plan_df.sort_values(
-            by=['is_small', 'is_milled', 'profile_color', 'glass_type', 'width', 'height'],
-            ascending=[False, False, True, True, True, True], inplace=True)
+            by=['is_small', 'is_milled', 'is_urgent_till_2_pm', 'is_urgent_till_6_pm', 'profile_color', 'glass_type', 'width', 'height'],
+            ascending=[False, False, False, False, True, True, True, True], inplace=True)
 
     def is_small_order(self):
         """
@@ -449,8 +454,16 @@ class ProductionOrderSchedulerP100:
         """
         Check if the order is urgent and needs to be completed by 2 PM
         """
-        self.production_plan_df['is_urgent_till_2_pm'] = self.production_plan_df['goods_receiver'].isin(
-            self.URGENT_ORDERS_RECEIVERS_2_pm)
+        # Warunek 1: Odbiorca jest na liście pilnych
+        cond1 = self.production_plan_df['goods_receiver'].isin(self.URGENT_ORDERS_RECEIVERS_2_pm)
+
+        # Warunek 2: Data produkcji = data wysyłki ORAZ specyficzny odbiorca
+        cond2 = (self.production_plan_df['production_date'] == self.production_plan_df['dispatch_date']) & \
+                (self.production_plan_df['goods_receiver'].isin(
+                    self.URGENT_ORDERS_RECEIVERS_2_pm_DISPATCH_DATE_EQ_PROD_DATE))
+
+        # Połączenie warunków operatorem | (lub)
+        self.production_plan_df['is_urgent_till_2_pm'] = cond1 | cond2
 
     def is_urgent_till_6_pm(self):
         """
