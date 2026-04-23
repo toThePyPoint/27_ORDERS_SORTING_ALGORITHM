@@ -477,27 +477,45 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         """
         Gather production order numbers for first and last positions in the production plan
         """
-        self.production_order_numbers_for_first_positions = self.production_plan_df[
-            (self.production_plan_df['quantity'] >= 12) &
-            (self.production_plan_df['is_material_available']) &
-            (self.production_plan_df['profile_color'] != 'WH') &
-            (self.production_plan_df['window_type'] == self.type_to_start_with)
-        ].sort_values(
-            by=['is_urgent_till_6_pm', 'customer_order_number'],
-            ascending=[False, True],
-            na_position='last'
-        )['prd_ord_num'].head(1).tolist()
+        # Helper to get the top order number based on a specific quantity
+        def get_top_order(qty_threshold):
+            mask = base_mask & (df['quantity'] >= qty_threshold)
+            return df[mask].sort_values(
+                by=['is_urgent_till_6_pm', 'customer_order_number'],
+                ascending=[False, True],
+                na_position='last'
+            )['prd_ord_num'].head(1).tolist()
 
-        self.production_order_numbers_for_last_positions = self.production_plan_df[
-            (self.production_plan_df['quantity'] >= 12) &
-            (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_first_positions)) &
-            (~self.production_plan_df['is_urgent_till_6_pm']) &
-            (self.production_plan_df['window_type'] == self.type_to_end_with)
-        ].sort_values(
+        def get_last_order(qty_threshold):
+            mask = base_mask & (df['quantity'] >= qty_threshold)
+            return df[mask].sort_values(
             by=['customer_order_number'],
             ascending=[False],
             na_position='last'
         )['prd_ord_num'].head(1).tolist()
+
+        df = self.production_plan_df
+        # Common filters (The "Pythonic" way to handle long pandas conditions)
+        base_mask = (
+                (df['is_material_available']) &
+                (df['profile_color'] != 'WH') &
+                (df['window_type'] == self.type_to_start_with)
+        )
+
+        # Try 12 first, fallback to 6
+        result = get_top_order(12) or get_top_order(6)
+        self.production_order_numbers_for_first_positions = result
+
+        df = self.production_plan_df
+        # Common filters (The "Pythonic" way to handle long pandas conditions)
+        base_mask = (
+                (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_first_positions)) &
+                (~self.production_plan_df['is_urgent_till_6_pm']) &
+                (self.production_plan_df['window_type'] == self.type_to_end_with)
+        )
+
+        result = get_last_order(12) or get_last_order(6)
+        self.production_order_numbers_for_last_positions = result
 
         self.last_position_width = self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'width'].item()
         self.last_position_order_number = self.production_order_numbers_for_last_positions[0]
