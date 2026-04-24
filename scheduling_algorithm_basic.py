@@ -246,7 +246,7 @@ class ProductionOrderSchedulerBasic:
 
         header_to_be_deleted = [header for header in zpp_cserie_headers if header not in headers_order]
 
-        self.production_plan_df = pd.read_clipboard(sep='\t', index_col=None, dtype={"sap_nr": str},
+        self.production_plan_df = pd.read_clipboard(sep='\t', index_col=None, dtype={"sap_nr": str, "window_type": str},
                                                     names=zpp_cserie_headers)
         self.production_plan_df.drop(columns=header_to_be_deleted, inplace=True, errors='ignore')
         self.production_plan_df['quantity'] = self.production_plan_df['quantity'].apply(

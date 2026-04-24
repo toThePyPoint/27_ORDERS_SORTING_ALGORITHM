@@ -55,7 +55,7 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         }
 
         self.fill_dummy_data()
-        self.fill_dummy_data()
+        self.fill_dimensions()
 
          # Repeat these functions in child class
         self.sort_production_plan()
@@ -161,16 +161,6 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
 
         if self.starting_orders_scheduled >= len(self.production_order_numbers_for_first_positions):
             self.starting_plan = False
-
-        # temp_df = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
-        #                                   (self.production_plan_df['window_type'].isin(self.ALL_TYPES))]
-        # if len(temp_df) <= len(self.production_order_numbers_for_last_positions):
-        #     print("TRIGGER FINISHING PLAN")
-        #     self.finishing_plan = True
-        #
-        # if len(temp_df) <= 1:
-        #     print("TRIGGER FINISHING PLAN LAST POSITION")
-        #     self.finishing_plan_last_position = True
 
     def schedule_production_plan(self):
         """
@@ -374,3 +364,5 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         self.skip_widths_until_last_width = False  # Reset the flag for skipping widths until the last width in the unique widths list
         self.ignore_untypical_sizes_condition = False
         self.number_of_empty_loops = 0  # Reset the counter for empty loops
+
+
