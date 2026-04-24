@@ -1,7 +1,7 @@
 import pandas as pd
 import re
 
-
+from gui_manager import show_message
 from scheduling_algorithm_basic import ProductionOrderSchedulerBasic
 
 
@@ -29,6 +29,7 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         self.skip_last_order_width = False
         self.increased_last_orders_list = False
         self.untypical_heights_allowed = False
+        self.is_untypical_size_warning_needed = False
 
         self.starting_orders_scheduled = 0
         self.quantity_of_first_type_sequence = 0
@@ -287,6 +288,7 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         self.handle_starting_and_finishing_plan()
         self.handle_dummy_orders()
         self.handle_untypical_heights_and_widths()
+        self.handle_untypical_size_warning(df_row)
 
     def gather_production_order_numbers_for_first_and_last_positions(self):
         """
@@ -312,6 +314,8 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         # self.schedule_production_plan_last_position()
         self.copy_df_index_to_clipboard(column_name='scheduling_position', new_col_name='copy_pos')
         self.display_view()
+        if self.is_untypical_size_warning_needed:
+            show_message('Uwaga! Nietypowe rozmiary zaplanowane przed kreską.')
 
     def handle_dummy_orders(self):
         """
@@ -364,5 +368,9 @@ class ProductionOrderSchedulerM320(ProductionOrderSchedulerBasic):
         self.skip_widths_until_last_width = False  # Reset the flag for skipping widths until the last width in the unique widths list
         self.ignore_untypical_sizes_condition = False
         self.number_of_empty_loops = 0  # Reset the counter for empty loops
+
+    def handle_untypical_size_warning(self, row):
+        if self.sum_of_scheduled_orders <= self.middle_point and (row.width in self.UNTYPICAL_WIDTHS_AFTER_MIDDLE_POINT or row.height in self.UNTYPICAL_HEIGHTS_AFTER_MIDDLE_POINT):
+            self.is_untypical_size_warning_needed = True
 
 
