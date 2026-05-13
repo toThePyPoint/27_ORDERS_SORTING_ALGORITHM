@@ -22,6 +22,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.type_to_end_with = None # either R4 or R7
         self.last_position_width = None
         self.last_position_order_number = None
+        self.last_position_quantity = None
 
         self.is_dummy_allowed = False
         self.starting_plan = True
@@ -246,9 +247,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                 print(f"==> Switch type to {self.possible_types}")
 
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
-            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
+            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched and not self.force_kf:
                 self.possible_types = ['R7']
-                print(f"==> Switch type to {self.possible_types}")
+                print(f"==> Switch type to --- {self.possible_types}")
                 self.first_type_switched = True
 
             # first type - R4, last type - R4 ==> R7 in one group
@@ -266,7 +267,6 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                 self.switched_to_last_type = True
                 print(f"==> Switch type to {self.possible_types}")
 
-        # TODO: continue here
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
             if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
                 self.possible_types = ['R3','R5']
@@ -294,7 +294,10 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
 
     def handle_kf(self, row):
         kf_left = self.production_plan_df[(~self.production_plan_df['is_scheduled']) &
-                                          (self.production_plan_df['is_KF'])]['quantity'].sum()
+                                          (self.production_plan_df['is_KF']) &
+                                          (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_last_positions))
+        ]['quantity'].sum()
+
         if row.is_KF and kf_left > 0:
             self.force_kf = True
 
@@ -467,9 +470,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.handle_small_orders_sequence(df_row.is_small)
         self.handle_material_availability()
         self.handle_dummy_orders()
+        self.handle_kf(df_row)
         self.handle_window_type()
         self.handle_white()
-        self.handle_kf(df_row)
         self.handle_last_order_size_consistency()
         self.handle_starting_and_finishing_plan()
 
@@ -518,6 +521,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         self.production_order_numbers_for_last_positions = result
 
         self.last_position_width = self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'width'].item()
+        self.last_position_quantity = self.production_plan_df.loc[self.production_plan_df['prd_ord_num'] == self.production_order_numbers_for_last_positions[0], 'quantity'].item()
         self.last_position_order_number = self.production_order_numbers_for_last_positions[0]
 
         print("Last positions: ", self.production_order_numbers_for_last_positions)
@@ -556,6 +560,10 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             (self.production_plan_df['profile_color'] != 'WH')]['quantity'].sum()
 
     def determine_type_to_start_with_and_end_with(self):
+
+        df = self.production_plan_df
+        # Common filters (The "Pythonic" way to handle long pandas conditions)
+
         if self.r4_total_sum < self.middle_point:
             self.type_to_start_with = 'R7'
             self.type_to_end_with = 'R7'
@@ -566,6 +574,17 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             self.type_to_start_with = 'R4'
             self.type_to_end_with = 'R7'
 
+            mask = (
+                    (~self.production_plan_df['prd_ord_num'].isin(self.production_order_numbers_for_first_positions)) &
+                    (~self.production_plan_df['is_urgent_till_6_pm']) &
+                    (self.production_plan_df['window_type'] == self.type_to_end_with) &
+                    (df['quantity'] >= 6)
+            )
+
+            if df[mask].empty:
+                self.type_to_end_with = 'R4'
+
+
         print("Type to start with is", self.type_to_start_with)
         print("Type to end with is", self.type_to_end_with)
 
@@ -573,8 +592,8 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         # TODO: continue here
         if self.type_to_start_with == 'R7' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r7_possible_before_middle_point // 2
-        # elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
-        #     self.quantity_of_first_type_sequence = min(self.r4_possible_before_middle_point, self.middle_point)
+        elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
+            self.quantity_of_first_type_sequence = self.r4_total_sum - self.last_position_quantity
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r4_total_sum
 
