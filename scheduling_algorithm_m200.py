@@ -593,7 +593,7 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         if self.type_to_start_with == 'R7' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r7_possible_before_middle_point // 2
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
-            self.quantity_of_first_type_sequence = self.r4_total_sum - self.last_position_quantity
+            self.quantity_of_first_type_sequence = self.r4_possible_before_middle_point
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
             self.quantity_of_first_type_sequence = self.r4_total_sum
 
