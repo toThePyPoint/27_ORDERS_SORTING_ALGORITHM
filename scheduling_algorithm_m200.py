@@ -212,10 +212,34 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             (self.production_plan_df['window_type'] == 'R4')
         ]['quantity'].sum()
 
+        r4_possible_before_middle_point_left = \
+        self.production_plan_df[(self.production_plan_df['window_type'] == 'R4') &
+                                (~self.production_plan_df['is_scheduled']) &
+                                (self.production_plan_df['is_material_available']) &
+                                ((self.production_plan_df['profile_color'] != 'WH') | (
+                                        self.production_plan_df['is_KF'] == True)) &
+                                (~self.production_plan_df['prd_ord_num'].isin(
+                                    self.production_order_numbers_for_last_positions))
+                                ]['quantity'].sum()
+
+        r7_possible_before_middle_point_left = \
+        self.production_plan_df[(self.production_plan_df['window_type'] == 'R7') &
+                                (~self.production_plan_df['is_scheduled']) &
+                                (self.production_plan_df['is_material_available']) &
+                                ((self.production_plan_df['profile_color'] != 'WH') | (
+                                        self.production_plan_df['is_KF'] == True)) &
+                                (~self.production_plan_df['prd_ord_num'].isin(
+                                    self.production_order_numbers_for_last_positions))
+                                ]['quantity'].sum()
+
+        print(f"R4 possible before middle point left: {r4_possible_before_middle_point_left}")
+
         r7_left = self.production_plan_df[
             (~self.production_plan_df['is_scheduled']) &
             (self.production_plan_df['window_type'] == 'R7')
         ]['quantity'].sum()
+
+        print(f"R7 left: {r7_left}")
 
         r3_left = self.production_plan_df[
             (~self.production_plan_df['is_scheduled']) &
@@ -268,10 +292,22 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
                 print(f"==> Switch type to {self.possible_types}")
 
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
-            if self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched:
+            if ((self.sum_of_scheduled_orders >= self.quantity_of_first_type_sequence and not self.first_type_switched)
+                    or (self.middle_point < self.sum_of_scheduled_orders < self.quantity_of_first_type_sequence and r7_left - self.last_position_quantity == 0)):
                 self.possible_types = ['R3','R5']
+                print("\n\n")
                 print(f"==> Switch type to {self.possible_types}")
                 self.first_type_switched = True
+
+            if (self.possible_types == ['R4'] and
+                    r4_possible_before_middle_point_left == 0 and
+                    self.sum_of_scheduled_orders < self.middle_point):
+                self.possible_types = ['R7']
+                print(f"==> Switch type to {self.possible_types}")
+
+            if r3_left == 0 and r5_left == 0 and self.sum_of_scheduled_orders >= self.middle_point and r4_left > 0:
+                self.possible_types = ['R4']
+                print(f"==> Switch type to {self.possible_types}")
 
             # first type - R4, last type - R7 ==> R4 and R7 in one group
             if r4_left == 0 and r3_left == 0 and r5_left == 0 and not self.switched_to_last_type:
@@ -559,6 +595,9 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
             (self.production_plan_df['window_type'] == 'R3') & (self.production_plan_df['is_material_available']) &
             (self.production_plan_df['profile_color'] != 'WH')]['quantity'].sum()
 
+        print('R4 possible before middle point: ', self.r4_possible_before_middle_point)
+        print('R3 possible before middle point: ', self.r3_possible_before_middle_point)
+
     def determine_type_to_start_with_and_end_with(self):
 
         df = self.production_plan_df
@@ -595,7 +634,10 @@ class ProductionOrderSchedulerM200(ProductionOrderSchedulerBasic):
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R4':
             self.quantity_of_first_type_sequence = self.r4_possible_before_middle_point
         elif self.type_to_start_with == 'R4' and self.type_to_end_with == 'R7':
+            # if self.r4_possible_before_middle_point >= self.middle_point:
             self.quantity_of_first_type_sequence = self.r4_total_sum
+            # else:
+            #     self.quantity_of_first_type_sequence = self.r4_possible_before_middle_point
 
         print(self.r4_possible_before_middle_point)
         print("Quantity Of First Type Sequence is", self.quantity_of_first_type_sequence)
